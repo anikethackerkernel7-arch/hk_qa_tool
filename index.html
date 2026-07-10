@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Argos Training — Transcription Practice</title>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --primary: #0d9488;
+    --primary-hover: #0f766e;
+    --primary-soft: #ccfbf1;
+    --accent: #f59e0b;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --radius: 10px;
+    --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+    --shadow-md: 0 4px 12px rgba(15,23,42,0.06);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Header ---------- */
+  .app-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    color: white;
+    padding: 14px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: var(--shadow-md);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 15px;
+  }
+  .brand-icon {
+    width: 26px; height: 26px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-size: 14px;
+  }
+  .brand-sep { opacity: 0.5; margin: 0 4px; }
+  .brand-tag {
+    font-weight: 500;
+    background: rgba(255,255,255,0.15);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    letter-spacing: 0.3px;
+  }
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+  }
+  .user-chip {
+    background: rgba(255,255,255,0.15);
+    padding: 6px 12px;
+    border-radius: 20px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .user-chip .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #86efac;
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+  .user-chip-info {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+    min-width: 0;
+  }
+  .user-chip-name {
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .user-chip-email {
+    font-size: 11px;
+    opacity: 0.85;
+    white-space: nowrap;
+  }
+  .btn-header {
+    background: rgba(255,255,255,0.15);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.25);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-header:hover { background: rgba(255,255,255,0.25); }
+
+  /* ---------- Progress bar ---------- */
+  .progress-strip {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .progress-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .progress-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+  }
+  .progress-count {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .clip-timer {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    border: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .clip-timer svg {
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+  .clip-timer-digits {
+    font-family: ui-monospace, monospace;
+    color: var(--text);
+  }
+
+  /* ---------- Main workspace ---------- */
+  .workspace {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    gap: 20px;
+    align-items: start;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: var(--text);
+  }
+  .card-title .clip-badge {
+    float: right;
+    background: var(--primary-soft);
+    color: var(--primary-hover);
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+
+  /* ---------- Audio player ---------- */
+  .audio-panel {
+    position: sticky;
+    top: 76px;
+  }
+  .audio-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: nowrap;
+  }
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: white;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: all 0.15s;
+    color: var(--primary);
+  }
+  .icon-btn svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+  }
+  .icon-btn:hover { border-color: var(--primary); background: var(--primary-soft); }
+  .icon-btn.primary {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+  .icon-btn.primary:hover { background: var(--primary-hover); }
+  .speed-select {
+    flex-shrink: 0;
+    width: auto;
+    min-width: 72px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .play-count {
+    margin-left: auto;
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .shortcuts {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .shortcuts kbd {
+    background: #f1f5f9;
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: ui-monospace, monospace;
+    font-size: 10px;
+  }
+  audio { display: none; } /* we use custom controls */
+
+  .waveform-container {
+    background: var(--primary-soft);
+    border-radius: 8px;
+    padding: 16px;
+    position: relative;
+    min-height: 90px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .waveform-bars {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
+    height: 50px;
+  }
+  .waveform-bars .bar {
+    flex: 1;
+    background: var(--primary);
+    opacity: 0.35;
+    border-radius: 1px;
+    transition: opacity 0.1s;
+  }
+  .waveform-bars .bar.played { opacity: 0.9; }
+  .waveform-times {
+    position: absolute;
+    bottom: 6px;
+    left: 12px;
+    right: 12px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--primary-hover);
+    font-family: ui-monospace, monospace;
+  }
+
+  .audio-meta {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-muted);
+    display: grid;
+    gap: 4px;
+  }
+  .audio-meta strong { color: var(--text); font-weight: 500; }
+
+  /* ---------- Form ---------- */
+  .field { margin-bottom: 18px; }
+  .field-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--text);
+  }
+  .field-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .field-hint.info {
+    background: #f0fdfa;
+    border-left: 3px solid var(--primary);
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    margin-top: 0;
+    border-radius: 0 4px 4px 0;
+    color: var(--primary-hover);
+  }
+  textarea, input[type="text"], input[type="email"], select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    background: white;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  textarea:focus, input:focus, select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+  }
+  textarea {
+    min-height: 90px;
+    resize: vertical;
+    line-height: 1.6;
+  }
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* ---------- Speakers block ---------- */
+  .speakers-block {
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin-top: 6px;
+  }
+  .speaker-row {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 10px;
+  }
+  .speaker-row-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary-hover);
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  /* ---------- Submit bar ---------- */
+  .submit-bar {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .btn {
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: white;
+    flex: 1;
+  }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+  .btn-secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { background: #f1f5f9; }
+
+  /* ---------- Login screen ---------- */
+  .login-screen {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #f0fdfa 0%, #f8fafc 100%);
+  }
+  .login-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 36px;
+    max-width: 420px;
+    width: 100%;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.08);
+  }
+  .login-logo {
+    width: 52px; height: 52px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    color: white;
+    font-size: 22px;
+    margin-bottom: 20px;
+  }
+  .login-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .login-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
+
+  /* ---------- Completion screen ---------- */
+  .complete-screen {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #f0fdfa 0%, #f8fafc 100%);
+  }
+  .complete-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 40px;
+    max-width: 480px;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.08);
+  }
+  .complete-icon {
+    width: 72px; height: 72px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 34px;
+    margin: 0 auto 20px;
+  }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--text);
+    color: white;
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.25s;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { background: var(--danger); }
+  .toast.success { background: var(--success); }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 900px) {
+    .workspace { grid-template-columns: 1fr; }
+    .audio-panel { position: static; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN SCREEN ============ -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-logo">◈</div>
+    <div class="login-title">Argos Training</div>
+    <div class="login-sub">Enter your details to begin your transcription practice session.</div>
+    <div class="field">
+      <label class="field-label" for="nameInput">Full name</label>
+      <input type="text" id="nameInput" placeholder="Jane Doe" autocomplete="name" />
+    </div>
+    <div class="field">
+      <label class="field-label" for="emailInput">Email address</label>
+      <input type="email" id="emailInput" placeholder="name@company.com" autocomplete="email" />
+      <div class="field-hint">Your submissions will be tracked against this email for training review.</div>
+    </div>
+    <button class="btn btn-primary" style="width:100%" onclick="startSession()">Start session</button>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="mainApp" style="display:none;">
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-icon">◈</div>
+      <span>Argos Training</span>
+      <span class="brand-sep">›</span>
+      <span class="brand-tag">Transcription Practice</span>
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <span class="dot"></span>
+        <div class="user-chip-info">
+          <span class="user-chip-name" id="headerName">—</span>
+          <span class="user-chip-email" id="headerEmail">—</span>
+        </div>
+      </div>
+      <button class="btn-header" onclick="resetSession()">End session</button>
+    </div>
+  </header>
+
+  <div class="progress-strip">
+    <div class="progress-label">Progress</div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    <div class="progress-count"><span id="progressCount">0 of 0</span></div>
+    <div class="clip-timer" id="clipTimer">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"/>
+        <path d="M12 6v6l4 2"/>
+      </svg>
+      <span>Time on clip: <span class="clip-timer-digits" id="clipTimerDigits">0:00</span></span>
+    </div>
+  </div>
+
+  <div class="workspace">
+    <!-- ==== Audio panel ==== -->
+    <div class="card audio-panel">
+      <div class="card-title">
+        Reference Audio
+        <span class="clip-badge" id="clipBadge">CLIP 1</span>
+      </div>
+
+      <div class="audio-controls">
+        <button class="icon-btn primary" id="playBtn" onclick="togglePlay()" title="Play / Pause">
+          <svg id="playIcon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="icon-btn" onclick="rewind()" title="Skip back 2s">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
+        </button>
+        <select class="speed-select" id="speedSelect" onchange="setSpeed(this.value)">
+          <option value="0.75">0.75x</option>
+          <option value="1" selected>1.0x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+        </select>
+        <div class="play-count">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-5-5 1.41-1.41L11 14.17l7.59-7.59L20 8l-9 9z"/></svg>
+          Played <span id="playCount">0</span> times
+        </div>
+      </div>
+
+      <div class="shortcuts">
+        Shortcuts: <kbd>Esc</kbd> play/pause · <kbd>F1</kbd> or <kbd>Esc</kbd>+<kbd>←</kbd> skip back 2s
+      </div>
+
+      <div class="waveform-container">
+        <div class="waveform-bars" id="waveformBars"></div>
+        <div class="waveform-times">
+          <span id="currentTime">0:00</span>
+          <span id="totalTime">0:00</span>
+        </div>
+      </div>
+
+      <audio id="audioEl" preload="metadata"></audio>
+
+      <div class="audio-meta">
+        <div><strong>Workitem ID:</strong> <span id="workitemId">—</span></div>
+        <div><strong>File:</strong> <span id="fileName">—</span></div>
+      </div>
+    </div>
+
+    <!-- ==== Transcription form ==== -->
+    <div class="card">
+      <div class="card-title">Transcribe the audio</div>
+
+      <!-- Spoken -->
+      <div class="field">
+        <label class="field-label" for="spokenInput">Spoken</label>
+        <div class="field-hint info">Type exactly what you hear — no capitalization for regular words, no punctuation.</div>
+        <textarea id="spokenInput" placeholder="Spoken transcription..."></textarea>
+      </div>
+
+      <!-- Written -->
+      <div class="field">
+        <label class="field-label" for="writtenInput">Written</label>
+        <div class="field-hint info">Surface form — apply normal capitalization, digits, and punctuation.</div>
+        <textarea id="writtenInput" placeholder="Written transcription..."></textarea>
+      </div>
+
+      <!-- Speakers -->
+      <div class="field">
+        <label class="field-label">Speakers</label>
+        <div class="speakers-block">
+          <label class="field-label" for="speakerCount" style="font-size:12px; font-weight:500; color:var(--text-muted);">How many distinct speakers?</label>
+          <select id="speakerCount" onchange="renderSpeakerRows()">
+            <option value="1">1 speaker</option>
+            <option value="2">2 speakers</option>
+            <option value="3">3 speakers</option>
+            <option value="4">4 speakers</option>
+          </select>
+          <div id="speakerRows"></div>
+        </div>
+      </div>
+
+      <div class="submit-bar">
+        <button class="btn btn-secondary" onclick="skipClip()">Skip clip</button>
+        <button class="btn btn-primary" id="submitBtn" onclick="submitClip()">Submit & Next →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ COMPLETION SCREEN ============ -->
+<div id="completeScreen" class="complete-screen" style="display:none;">
+  <div class="complete-card">
+    <div class="complete-icon">✓</div>
+    <h2 style="margin-bottom:8px;">Session complete</h2>
+    <p style="color:var(--text-muted); margin-bottom:24px;">
+      You've submitted all <span id="totalSubmitted">0</span> clips. Your responses have been saved for trainer review.
+    </p>
+    <button class="btn btn-primary" onclick="resetSession()">Start new session</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* =========================================================
+   CONFIGURATION
+   ========================================================= */
+
+// Paste your deployed Google Apps Script Web App URL here.
+// See SETUP.md for step-by-step instructions.
+const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syftzSIkPvsKvOTiYO9VeUNSUg7LLDNOH6_4Le8T5X419Ayb8oSiLDli/exec";
+
+// The audio queue. Add/remove entries to change what trainees practice on.
+// Each entry: { id, file, workitem, locale }
+const AUDIO_QUEUE = [
+  { id: "clip_01", file: "audio/clip_01.mp4",  workitem: "trn-001-a4f2", locale: "en_US" },
+  { id: "clip_02", file: "audio/clip_02.wav",  workitem: "trn-002-b8e1", locale: "en_US" },
+  { id: "clip_03", file: "audio/clip_03.m4a",  workitem: "trn-003-c9d3", locale: "en_IN" },
+  { id: "clip_04", file: "audio/clip_04.wav",  workitem: "trn-004-x1y2", locale: "en_US" },
+  { id: "clip_05", file: "audio/clip_05.wav",  workitem: "trn-005-d7f4", locale: "en_US" },
+  { id: "clip_06", file: "audio/clip_06.wav",  workitem: "trn-006-e2a9", locale: "en_US" },
+  { id: "clip_07", file: "audio/clip_07.wav",  workitem: "trn-007-k3m1", locale: "en_US" },
+  { id: "clip_08", file: "audio/clip_08.wav",  workitem: "trn-008-p5n8", locale: "en_US" },
+  { id: "clip_09", file: "audio/clip_09.wav",  workitem: "trn-009-q6r2", locale: "en_US" },
+];
+
+const NATIVITY_OPTIONS = ["Native", "Non-Native", "Unknown", "TTS"];
+const GENDER_OPTIONS = ["Male", "Female", "Unknown"];
+
+const SESSION_KEY = "argos_training_session";
+
+/* =========================================================
+   STATE
+   ========================================================= */
+let state = {
+  name: "",
+  email: "",
+  currentIndex: 0,
+  playCount: 0,
+  startTime: null,
+  sessionStartTime: null,
+  startedAt: null,
+  clipStartedAt: null,
+};
+
+const audioEl = document.getElementById("audioEl");
+let clipTimerInterval = null;
+
+/* =========================================================
+   SESSION PERSISTENCE
+   ========================================================= */
+function saveSession() {
+  const session = {
+    name: state.name,
+    email: state.email,
+    currentIndex: state.currentIndex,
+    sessionStartTime: state.sessionStartTime,
+    startedAt: state.startedAt || new Date().toISOString(),
+  };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (!session.name || !session.email) return null;
+    if (typeof session.currentIndex !== "number") return null;
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function updateHeader() {
+  document.getElementById("headerName").textContent = state.name || "—";
+  document.getElementById("headerEmail").textContent = state.email || "—";
+}
+
+/* =========================================================
+   LOGIN
+   ========================================================= */
+function startSession() {
+  const name = document.getElementById("nameInput").value.trim();
+  if (name.length < 2) {
+    showToast("Please enter your full name.", "error");
+    return;
+  }
+  const email = document.getElementById("emailInput").value.trim();
+  if (!email || !email.includes("@")) {
+    showToast("Please enter a valid email address.", "error");
+    return;
+  }
+  state.name = name;
+  state.email = email;
+  state.startedAt = new Date().toISOString();
+  state.sessionStartTime = Date.now();
+  updateHeader();
+  saveSession();
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("mainApp").style.display = "block";
+  loadClip(0);
+}
+
+function resumeSession(session) {
+  state.name = session.name;
+  state.email = session.email;
+  state.currentIndex = session.currentIndex;
+  state.startedAt = session.startedAt || new Date().toISOString();
+  state.sessionStartTime = session.sessionStartTime
+    || (session.startedAt ? Date.parse(session.startedAt) : Date.now());
+  state.playCount = 0;
+  state.startTime = null;
+  updateHeader();
+  document.getElementById("loginScreen").style.display = "none";
+
+  if (session.currentIndex >= AUDIO_QUEUE.length) {
+    showCompletion();
+    showToast(`Welcome back, ${session.name}. Your session is complete.`, "success");
+    return;
+  }
+
+  document.getElementById("mainApp").style.display = "block";
+  loadClip(session.currentIndex);
+  showToast(`Welcome back, ${session.name}. Resuming from clip ${session.currentIndex + 1}.`, "success");
+}
+
+function resetSession() {
+  if (!confirm("End this session? Your progress will be cleared.")) return;
+  stopClipTimer();
+  clearSession();
+  state = {
+    name: "",
+    email: "",
+    currentIndex: 0,
+    playCount: 0,
+    startTime: null,
+    sessionStartTime: null,
+    startedAt: null,
+    clipStartedAt: null,
+  };
+  document.getElementById("nameInput").value = "";
+  document.getElementById("emailInput").value = "";
+  document.getElementById("mainApp").style.display = "none";
+  document.getElementById("completeScreen").style.display = "none";
+  document.getElementById("loginScreen").style.display = "grid";
+}
+
+/* =========================================================
+   CLIP LOADING
+   ========================================================= */
+function loadClip(index) {
+  if (index >= AUDIO_QUEUE.length) {
+    stopClipTimer();
+    state.currentIndex = index;
+    saveSession();
+    showCompletion();
+    return;
+  }
+  state.currentIndex = index;
+  state.playCount = 0;
+  state.startTime = Date.now();
+  state.clipStartedAt = new Date().toISOString();
+
+  const clip = AUDIO_QUEUE[index];
+  audioEl.src = clip.file;
+  audioEl.load();
+
+  document.getElementById("clipBadge").textContent = `CLIP ${index + 1}`;
+  document.getElementById("workitemId").textContent = clip.workitem;
+  document.getElementById("fileName").textContent = clip.file.split("/").pop();
+  document.getElementById("playCount").textContent = "0";
+  document.getElementById("currentTime").textContent = "0:00";
+  document.getElementById("totalTime").textContent = "0:00";
+  document.getElementById("spokenInput").value = "";
+  document.getElementById("writtenInput").value = "";
+  document.getElementById("speakerCount").value = "1";
+
+  updateProgress();
+  renderWaveform();
+  renderSpeakerRows();
+  saveSession();
+  startClipTimer();
+
+  // Reset play button icon
+  document.getElementById("playIcon").innerHTML = '<path d="M8 5v14l11-7z"/>';
+}
+
+function updateProgress() {
+  const total = AUDIO_QUEUE.length;
+  const current = state.currentIndex + 1;
+  const pct = ((state.currentIndex) / total) * 100;
+  document.getElementById("progressFill").style.width = pct + "%";
+  document.getElementById("progressCount").textContent = `${current} of ${total}`;
+}
+
+function formatClipTime(totalSec) {
+  const sec = Math.max(0, totalSec);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function updateClipTimerDisplay() {
+  if (!state.startTime) return;
+  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  document.getElementById("clipTimerDigits").textContent = formatClipTime(elapsed);
+}
+
+function startClipTimer() {
+  stopClipTimer();
+  updateClipTimerDisplay();
+  clipTimerInterval = setInterval(updateClipTimerDisplay, 1000);
+}
+
+function stopClipTimer() {
+  if (clipTimerInterval) {
+    clearInterval(clipTimerInterval);
+    clipTimerInterval = null;
+  }
+}
+
+function buildTimingFields() {
+  const now = Date.now();
+  return {
+    timeSpentSec: Math.round((now - state.startTime) / 1000),
+    sessionElapsedSec: Math.round((now - state.sessionStartTime) / 1000),
+    clipStartedAt: state.clipStartedAt,
+    clipSubmittedAt: new Date(now).toISOString(),
+  };
+}
+
+/* =========================================================
+   AUDIO CONTROLS
+   ========================================================= */
+function togglePlay() {
+  if (audioEl.paused) {
+    audioEl.play();
+    state.playCount++;
+    document.getElementById("playCount").textContent = state.playCount;
+    document.getElementById("playIcon").innerHTML = '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>';
+  } else {
+    audioEl.pause();
+    document.getElementById("playIcon").innerHTML = '<path d="M8 5v14l11-7z"/>';
+  }
+}
+
+function rewind() {
+  audioEl.currentTime = Math.max(0, audioEl.currentTime - 2);
+}
+
+function setSpeed(v) {
+  audioEl.playbackRate = parseFloat(v);
+}
+
+audioEl.addEventListener("ended", () => {
+  document.getElementById("playIcon").innerHTML = '<path d="M8 5v14l11-7z"/>';
+});
+
+audioEl.addEventListener("loadedmetadata", () => {
+  document.getElementById("totalTime").textContent = formatTime(audioEl.duration);
+});
+
+audioEl.addEventListener("timeupdate", () => {
+  document.getElementById("currentTime").textContent = formatTime(audioEl.currentTime);
+  updateWaveformProgress();
+});
+
+function formatTime(s) {
+  if (isNaN(s)) return "0:00";
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
+/* Keyboard shortcuts */
+document.addEventListener("keydown", (e) => {
+  if (document.getElementById("mainApp").style.display === "none") return;
+  const active = document.activeElement.tagName;
+  if (e.key === "Escape") {
+    e.preventDefault();
+    togglePlay();
+  }
+  if (e.key === "F1") {
+    e.preventDefault();
+    rewind();
+  }
+});
+
+/* =========================================================
+   WAVEFORM (visual only — not a real waveform)
+   ========================================================= */
+function renderWaveform() {
+  const bars = document.getElementById("waveformBars");
+  bars.innerHTML = "";
+  const count = 60;
+  for (let i = 0; i < count; i++) {
+    const bar = document.createElement("div");
+    bar.className = "bar";
+    // Pseudo-random consistent heights
+    const h = 10 + Math.abs(Math.sin(i * 0.7) * 40) + Math.abs(Math.cos(i * 1.3) * 15);
+    bar.style.height = Math.min(50, h) + "px";
+    bars.appendChild(bar);
+  }
+}
+
+function updateWaveformProgress() {
+  const bars = document.getElementById("waveformBars").children;
+  if (!audioEl.duration) return;
+  const progress = audioEl.currentTime / audioEl.duration;
+  const activeBars = Math.floor(progress * bars.length);
+  for (let i = 0; i < bars.length; i++) {
+    bars[i].classList.toggle("played", i < activeBars);
+  }
+}
+
+/* =========================================================
+   SPEAKER ROWS
+   ========================================================= */
+function renderSpeakerRows() {
+  const count = parseInt(document.getElementById("speakerCount").value);
+  const container = document.getElementById("speakerRows");
+  container.innerHTML = "";
+  for (let i = 1; i <= count; i++) {
+    const row = document.createElement("div");
+    row.className = "speaker-row";
+    row.innerHTML = `
+      <div class="speaker-row-header">Speaker ${i}</div>
+      <div class="field-row">
+        <div>
+          <label class="field-label" style="font-size:11px; font-weight:500;">Gender</label>
+          <select data-speaker="${i}" data-attr="gender">
+            <option value="">Select…</option>
+            ${GENDER_OPTIONS.map(g => `<option value="${g}">${g}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="field-label" style="font-size:11px; font-weight:500;">Nativity</label>
+          <select data-speaker="${i}" data-attr="nativity">
+            <option value="">Select…</option>
+            ${NATIVITY_OPTIONS.map(n => `<option value="${n}">${n}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+    `;
+    container.appendChild(row);
+  }
+}
+
+/* =========================================================
+   SUBMIT
+   ========================================================= */
+function collectSpeakers() {
+  const rows = document.querySelectorAll(".speaker-row");
+  const speakers = [];
+  rows.forEach((row) => {
+    const gender = row.querySelector('[data-attr="gender"]').value;
+    const nativity = row.querySelector('[data-attr="nativity"]').value;
+    speakers.push({ gender, nativity });
+  });
+  return speakers;
+}
+
+function validateSubmission() {
+  const spoken = document.getElementById("spokenInput").value.trim();
+  const written = document.getElementById("writtenInput").value.trim();
+  if (!spoken) { showToast("Please add a Spoken transcription.", "error"); return false; }
+  if (!written) { showToast("Please add a Written transcription.", "error"); return false; }
+  const speakers = collectSpeakers();
+  for (let i = 0; i < speakers.length; i++) {
+    if (!speakers[i].gender || !speakers[i].nativity) {
+      showToast(`Please complete Speaker ${i + 1} details.`, "error");
+      return false;
+    }
+  }
+  return true;
+}
+
+async function submitClip() {
+  if (!validateSubmission()) return;
+
+  const clip = AUDIO_QUEUE[state.currentIndex];
+  const speakers = collectSpeakers();
+  const timing = buildTimingFields();
+  stopClipTimer();
+
+  const payload = {
+    timestamp: timing.clipSubmittedAt,
+    email: state.email,
+    name: state.name,
+    clipId: clip.id,
+    workitem: clip.workitem,
+    locale: clip.locale,
+    fileName: clip.file.split("/").pop(),
+    spoken: document.getElementById("spokenInput").value.trim(),
+    written: document.getElementById("writtenInput").value.trim(),
+    speakerCount: speakers.length,
+    speakers: speakers,
+    playCount: state.playCount,
+    timeSpentSec: timing.timeSpentSec,
+    sessionElapsedSec: timing.sessionElapsedSec,
+    clipStartedAt: timing.clipStartedAt,
+    clipSubmittedAt: timing.clipSubmittedAt,
+    skipped: false,
+  };
+
+  const btn = document.getElementById("submitBtn");
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+
+  try {
+    await sendToSheets(payload);
+    showToast("Saved. Loading next clip…", "success");
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = "Submit & Next →";
+      loadClip(state.currentIndex + 1);
+    }, 800);
+  } catch (err) {
+    console.error(err);
+    showToast("Could not save. Check your Sheets URL in the code.", "error");
+    btn.disabled = false;
+    btn.textContent = "Submit & Next →";
+    startClipTimer();
+  }
+}
+
+async function skipClip() {
+  if (!confirm("Skip this clip? A skip will still be logged.")) return;
+  const clip = AUDIO_QUEUE[state.currentIndex];
+  const timing = buildTimingFields();
+  stopClipTimer();
+  const payload = {
+    timestamp: timing.clipSubmittedAt,
+    email: state.email,
+    name: state.name,
+    clipId: clip.id,
+    workitem: clip.workitem,
+    locale: clip.locale,
+    fileName: clip.file.split("/").pop(),
+    spoken: "",
+    written: "",
+    speakerCount: 0,
+    speakers: [],
+    playCount: state.playCount,
+    timeSpentSec: timing.timeSpentSec,
+    sessionElapsedSec: timing.sessionElapsedSec,
+    clipStartedAt: timing.clipStartedAt,
+    clipSubmittedAt: timing.clipSubmittedAt,
+    skipped: true,
+  };
+  try { await sendToSheets(payload); } catch (e) { console.warn(e); }
+  loadClip(state.currentIndex + 1);
+}
+
+async function sendToSheets(payload) {
+  if (!SHEETS_ENDPOINT || SHEETS_ENDPOINT.includes("PASTE_YOUR")) {
+    console.warn("Sheets endpoint not configured — logging payload instead:", payload);
+    return; // Fail silently in dev mode
+  }
+  await fetch(SHEETS_ENDPOINT, {
+    method: "POST",
+    mode: "no-cors", // Apps Script accepts this for simple requests
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+}
+
+function showCompletion() {
+  stopClipTimer();
+  document.getElementById("totalSubmitted").textContent = AUDIO_QUEUE.length;
+  document.getElementById("mainApp").style.display = "none";
+  document.getElementById("completeScreen").style.display = "grid";
+}
+
+/* =========================================================
+   TOAST
+   ========================================================= */
+let toastTimer;
+function showToast(msg, type = "") {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show " + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.className = "toast"; }, 2600);
+}
+
+/* Focus name input on load; resume saved session if present */
+(function initApp() {
+  const session = loadSession();
+  if (session) {
+    resumeSession(session);
+    return;
+  }
+  document.getElementById("nameInput").focus();
+})();
+
+document.getElementById("nameInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") document.getElementById("emailInput").focus();
+});
+document.getElementById("emailInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") startSession();
+});
+</script>
+</body>
+</html>
