@@ -1150,31 +1150,9 @@ async function submitClip() {
   }
 }
 
-async function skipClip() {
-  if (!confirm("Skip this clip? A skip will still be logged.")) return;
-  const clip = AUDIO_QUEUE[state.currentIndex];
-  const timing = buildTimingFields();
+function skipClip() {
+  if (!confirm("Skip this clip? Nothing will be saved for it.")) return;
   stopClipTimer();
-  const payload = {
-    timestamp: timing.clipSubmittedAt,
-    email: state.email,
-    name: state.name,
-    clipId: clip.id,
-    workitem: clip.workitem,
-    locale: clip.locale,
-    fileName: clip.file.split("/").pop(),
-    spoken: "",
-    written: "",
-    speakerCount: 0,
-    speakers: [],
-    playCount: state.playCount,
-    timeSpentSec: timing.timeSpentSec,
-    sessionElapsedSec: timing.sessionElapsedSec,
-    clipStartedAt: timing.clipStartedAt,
-    clipSubmittedAt: timing.clipSubmittedAt,
-    skipped: true,
-  };
-  try { await sendToSheets(payload); } catch (e) { console.warn(e); }
   loadClip(state.currentIndex + 1);
 }
 
