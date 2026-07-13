@@ -532,15 +532,11 @@
   <div class="login-card">
     <div class="login-logo">◈</div>
     <div class="login-title">Argos Training</div>
-    <div class="login-sub">Enter your details to begin your transcription practice session.</div>
-    <div class="field">
-      <label class="field-label" for="nameInput">Full name</label>
-      <input type="text" id="nameInput" placeholder="Jane Doe" autocomplete="name" />
-    </div>
+    <div class="login-sub">Enter your registered work email to begin your transcription practice session.</div>
     <div class="field">
       <label class="field-label" for="emailInput">Email address</label>
       <input type="email" id="emailInput" placeholder="name@company.com" autocomplete="email" />
-      <div class="field-hint">Your submissions will be tracked against this email for training review.</div>
+      <div class="field-hint">Only registered trainee emails can start a session. Your name is assigned automatically.</div>
     </div>
     <button class="btn btn-primary" style="width:100%" onclick="startSession()">Start session</button>
   </div>
@@ -708,7 +704,23 @@ const AUDIO_QUEUE = [
 const NATIVITY_OPTIONS = ["Native", "Non-Native", "Unknown", "TTS"];
 const GENDER_OPTIONS = ["Male", "Female", "Unknown"];
 
+// Only these emails can log in. Name is fixed per email (case-insensitive lookup).
+const ALLOWED_USERS = {
+  "dishikamore205@gmail.com": "Dishika More",
+  "fatimagoshiya5@gmail.com": "Goshiya Fatima",
+  "dubeyrishika53@gmail.com": "Rishika Dubey",
+  "kaharashish657@gmail.com": "Ashish Kahar",
+  "ramji@gmail.com": "Amrendra Pratap Singh",
+  "murtuza21@gmail.com": "Murtaza Ali",
+};
+
 const SESSION_KEY = "argos_training_session";
+
+function lookupAllowedUser(email) {
+  const key = (email || "").trim().toLowerCase();
+  const name = ALLOWED_USERS[key];
+  return name ? { email: key, name } : null;
+}
 
 /* =========================================================
    STATE
@@ -746,8 +758,14 @@ function loadSession() {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
-    if (!session.name || !session.email) return null;
-    if (typeof session.currentIndex !== "number") return null;
+    if (!session.email || typeof session.currentIndex !== "number") return null;
+    const user = lookupAllowedUser(session.email);
+    if (!user) {
+      clearSession();
+      return null;
+    }
+    session.email = user.email;
+    session.name = user.name;
     return session;
   } catch {
     return null;
@@ -767,18 +785,18 @@ function updateHeader() {
    LOGIN
    ========================================================= */
 function startSession() {
-  const name = document.getElementById("nameInput").value.trim();
-  if (name.length < 2) {
-    showToast("Please enter your full name.", "error");
-    return;
-  }
   const email = document.getElementById("emailInput").value.trim();
   if (!email || !email.includes("@")) {
     showToast("Please enter a valid email address.", "error");
     return;
   }
-  state.name = name;
-  state.email = email;
+  const user = lookupAllowedUser(email);
+  if (!user) {
+    showToast("This email is not registered for training. Contact your trainer.", "error");
+    return;
+  }
+  state.name = user.name;
+  state.email = user.email;
   state.startedAt = new Date().toISOString();
   state.sessionStartTime = Date.now();
   updateHeader();
@@ -825,11 +843,11 @@ function resetSession() {
     startedAt: null,
     clipStartedAt: null,
   };
-  document.getElementById("nameInput").value = "";
   document.getElementById("emailInput").value = "";
   document.getElementById("mainApp").style.display = "none";
   document.getElementById("completeScreen").style.display = "none";
   document.getElementById("loginScreen").style.display = "grid";
+  document.getElementById("emailInput").focus();
 }
 
 /* =========================================================
@@ -1171,19 +1189,16 @@ function showToast(msg, type = "") {
   toastTimer = setTimeout(() => { t.className = "toast"; }, 2600);
 }
 
-/* Focus name input on load; resume saved session if present */
+/* Focus email input on load; resume saved session if present */
 (function initApp() {
   const session = loadSession();
   if (session) {
     resumeSession(session);
     return;
   }
-  document.getElementById("nameInput").focus();
+  document.getElementById("emailInput").focus();
 })();
 
-document.getElementById("nameInput").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") document.getElementById("emailInput").focus();
-});
 document.getElementById("emailInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter") startSession();
 });
