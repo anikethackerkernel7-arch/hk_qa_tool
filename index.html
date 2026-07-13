@@ -891,7 +891,7 @@ function loadClip(index) {
   audioEl.src = clip.file;
   audioEl.load();
 
-  document.getElementById("clipBadge").textContent = `CLIP ${index + 1}`;
+  document.getElementById("clipBadge").textContent = `CLIP ${clip.id.replace(/^clip_0*/, "")}`;
   document.getElementById("workitemId").textContent = clip.workitem;
   document.getElementById("fileName").textContent = clip.file.split("/").pop();
   document.getElementById("playCount").textContent = "0";
