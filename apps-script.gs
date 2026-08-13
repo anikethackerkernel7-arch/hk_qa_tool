@@ -1,28 +1,25 @@
 /**
- * Argos Training — Google Sheets receiver
- * ---------------------------------------
- * This script receives submissions from the training tool and appends
- * one row per submission to the active Google Sheet.
+ * Argos Training — Google Sheets receiver (v8)
  *
- * SETUP:
- *  1. Create a new Google Sheet.
- *  2. Extensions → Apps Script.
- *  3. Delete the default code and paste THIS file.
- *  4. Click Deploy → New deployment → Type: Web app.
- *     - Execute as: Me
- *     - Who has access: Anyone
- *  5. Copy the deployment URL and paste it into index.html
- *     (the SHEETS_ENDPOINT constant near the top of the <script> block).
+ * New in v8:
+ *  - "Incorrect Text" and "Original Text" columns (after Written)
+ *    for the correction-task flow. Original is never shown in the UI.
  *
- * Re-deploy (Deploy → Manage deployments → Edit) any time you change
- * this code. The URL stays the same across edits of the same deployment.
+ * Carried over from v7:
+ *  - Idempotency check: rejects duplicate submissions caused by Apps Script's
+ *    302 redirect (which causes doPost to run twice for the same POST).
+ *    Uses email + clipId + clipStartedAt as the unique key.
+ *  - Skipped submissions rejected (never saved to sheet)
+ *  - Old skipped rows auto-cleaned on next submission
+ *  - "Time on Clip (mm:ss)" column forced to plain text (fixes 12/30/1899 bug)
+ *  - Totals values in column B with correct number formats
+ *  - "SKIPPED CLIPS" removed from totals block
+ *  - Efficient clearing (only clears used range + buffer)
  */
 
-const SHEET_NAME = "Submissions";
-
-// Header row written on first run.
 const HEADERS = [
   "Timestamp",
+  "Name",
   "Email",
   "Clip ID",
   "Workitem",
@@ -30,52 +27,62 @@ const HEADERS = [
   "File",
   "Spoken",
   "Written",
+  "Incorrect Text",
+  "Original Text",
   "Speaker Count",
   "Speaker 1 Gender", "Speaker 1 Nativity",
   "Speaker 2 Gender", "Speaker 2 Nativity",
   "Speaker 3 Gender", "Speaker 3 Nativity",
   "Speaker 4 Gender", "Speaker 4 Nativity",
   "Play Count",
-  "Time Spent (sec)",
+  "Time on Clip (sec)",
+  "Time on Clip (mm:ss)",
+  "Session Elapsed (sec)",
+  "Clip Started At",
+  "Clip Submitted At",
   "Skipped"
 ];
+
+// 0-based indexes into HEADERS / data rows
+const COL = {
+  email: 2,
+  clipId: 3,
+  playCount: 20,
+  timeSec: 21,
+  timeMmSs: 22,       // 1-based column = 23
+  clipStartedAt: 24,
+  skipped: 26,
+};
+
+// Marker strings used to identify totals rows so we can safely filter them out.
+const TOTAL_MARKERS = ["TOTAL", "AVG", "SKIPPED CLIPS"];
 
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
-    const sheet = getOrCreateSheet();
 
-    // Ensure headers exist
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(HEADERS);
-      sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold");
-      sheet.setFrozenRows(1);
+    // Ignore skipped submissions — don't save them to the sheet
+    if (data.skipped === true) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, ignored: "skipped" }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
 
-    const s = data.speakers || [];
-    const speakerCells = [];
-    for (let i = 0; i < 4; i++) {
-      speakerCells.push(s[i] ? s[i].gender  || "" : "");
-      speakerCells.push(s[i] ? s[i].nativity || "" : "");
+    const sheet = getOrCreateUserSheet(data.email);
+
+    // Idempotency check — reject duplicates from GAS 302 redirect double-execution
+    if (isDuplicateSubmission(sheet, data)) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, ignored: "duplicate" }))
+        .setMimeType(ContentService.MimeType.JSON);
     }
 
-    const row = [
-      data.timestamp     || new Date().toISOString(),
-      data.email         || "",
-      data.clipId        || "",
-      data.workitem      || "",
-      data.locale        || "",
-      data.fileName      || "",
-      data.spoken        || "",
-      data.written       || "",
-      data.speakerCount  || 0,
-      ...speakerCells,
-      data.playCount     || 0,
-      data.timeSpentSec  || 0,
-      data.skipped ? "Yes" : "No"
-    ];
+    const existingRows = getExistingDataRows(sheet);
+    const newRow = buildDataRow(data);
+    const allRows = existingRows.concat([newRow]);
 
-    sheet.appendRow(row);
+    rewriteUserSheet(sheet, allRows);
+    updateSummarySheet(data);
 
     return ContentService
       .createTextOutput(JSON.stringify({ ok: true }))
@@ -90,13 +97,239 @@ function doPost(e) {
 
 function doGet() {
   return ContentService
-    .createTextOutput("Argos Training endpoint is live. Use POST to submit.")
+    .createTextOutput("Argos Training endpoint is live.")
     .setMimeType(ContentService.MimeType.TEXT);
 }
 
-function getOrCreateSheet() {
+/* ---------------- Idempotency ---------------- */
+
+/**
+ * Check if this exact submission was already saved.
+ * Uses email + clipId + clipStartedAt as the unique key.
+ * Prevents duplicate rows from Apps Script's 302 redirect double-execution.
+ */
+function isDuplicateSubmission(sheet, data) {
+  if (!data.clipStartedAt) return false; // no key to check against
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+
+  const values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+
+  const targetEmail     = String(data.email         || "").trim();
+  const targetClipId    = String(data.clipId        || "").trim();
+  const targetStartedAt = String(data.clipStartedAt || "").trim();
+
+  return values.some(r => {
+    return String(r[COL.email]         || "").trim() === targetEmail &&
+           String(r[COL.clipId]        || "").trim() === targetClipId &&
+           String(r[COL.clipStartedAt] || "").trim() === targetStartedAt;
+  });
+}
+
+/* ---------------- Row builders ---------------- */
+
+function buildDataRow(data) {
+  const s = data.speakers || [];
+  const speakerCells = [];
+  for (let i = 0; i < 4; i++) {
+    speakerCells.push(s[i] ? s[i].gender  || "" : "");
+    speakerCells.push(s[i] ? s[i].nativity || "" : "");
+  }
+
+  const timeSec = data.timeSpentSec || 0;
+
+  return [
+    data.timestamp        || new Date().toISOString(),
+    data.name             || "",
+    data.email            || "",
+    data.clipId           || "",
+    data.workitem         || "",
+    data.locale           || "",
+    data.fileName         || "",
+    data.spoken           || "",
+    data.written          || "",
+    data.incorrectText    || "",
+    data.originalText     || "",
+    data.speakerCount     || 0,
+    ...speakerCells,
+    data.playCount        || 0,
+    timeSec,
+    formatSeconds(timeSec),
+    data.sessionElapsedSec || 0,
+    data.clipStartedAt    || "",
+    data.clipSubmittedAt  || "",
+    data.skipped ? "Yes" : "No"
+  ];
+}
+
+/* ---------------- Sheet helpers ---------------- */
+
+function getExistingDataRows(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const values = sheet.getRange(2, 1, lastRow - 1, HEADERS.length).getValues();
+
+  return values.filter(r => {
+    const first = String(r[0] || "").trim();
+    if (!first) return false;
+    // Filter out totals block rows
+    for (const marker of TOTAL_MARKERS) {
+      if (first.indexOf(marker) !== -1) return false;
+    }
+    // Filter out any old skipped rows so they get removed on the next rewrite
+    if (r[COL.skipped] === "Yes") return false;
+    return true;
+  });
+}
+
+function rewriteUserSheet(sheet, dataRows) {
+  // 1. Clear the used range + buffer AND reset formats at the column level
+  const maxRow = Math.max(sheet.getLastRow() + 20, 100);
+  const clearRange = sheet.getRange(1, 1, maxRow, HEADERS.length);
+  clearRange.clearContent();
+  clearRange.setBackground(null);
+  clearRange.setFontWeight("normal");
+
+  // Reset ALL column formats to General — clears sticky Date/Time formats from
+  // prior script versions that made "Time on Clip (mm:ss)" render as 12/30/1899.
+  sheet.getRange(1, 1, sheet.getMaxRows(), HEADERS.length).setNumberFormat("General");
+
+  // 2. Headers
+  sheet.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]);
+  sheet.getRange(1, 1, 1, HEADERS.length).setFontWeight("bold");
+  sheet.setFrozenRows(1);
+
+  // 3. Data rows
+  if (dataRows.length > 0) {
+    sheet.getRange(2, 1, dataRows.length, HEADERS.length).setValues(dataRows);
+
+    // Force plain-text format on "Time on Clip (mm:ss)" (1-based col 23)
+    sheet.getRange(1, COL.timeMmSs + 1, sheet.getMaxRows(), 1).setNumberFormat("@");
+  }
+
+  // 4. Totals block — only columns A + B, correctly aligned
+  const totals = computeTotals(dataRows);
+  const totalsStartRow = dataRows.length + 3;
+
+  const totalsBlock = [
+    ["TOTAL CLIPS",         totals.count],
+    ["TOTAL PLAY COUNT",    totals.plays],
+    ["TOTAL TIME (sec)",    totals.timeSec],
+    ["TOTAL TIME (mm:ss)",  formatSeconds(totals.timeSec)],
+    ["AVG TIME PER CLIP",   formatSeconds(totals.avgSec)],
+  ];
+
+  const totalsRange = sheet.getRange(totalsStartRow, 1, totalsBlock.length, 2);
+  totalsRange.setValues(totalsBlock);
+  totalsRange.setFontWeight("bold");
+  totalsRange.setBackground("#f0fdfa");
+
+  // Force correct display format per row
+  sheet.getRange(totalsStartRow,     2).setNumberFormat("0");   // TOTAL CLIPS       — integer
+  sheet.getRange(totalsStartRow + 1, 2).setNumberFormat("0");   // TOTAL PLAY COUNT  — integer
+  sheet.getRange(totalsStartRow + 2, 2).setNumberFormat("0");   // TOTAL TIME (sec)  — integer
+  sheet.getRange(totalsStartRow + 3, 2).setNumberFormat("@");   // TOTAL TIME (mm:ss)— plain text
+  sheet.getRange(totalsStartRow + 4, 2).setNumberFormat("@");   // AVG TIME PER CLIP — plain text
+
+  // Re-write time strings as literal text to prevent Sheets from parsing them as durations
+  sheet.getRange(totalsStartRow + 3, 2).setValue("'" + formatSeconds(totals.timeSec));
+  sheet.getRange(totalsStartRow + 4, 2).setValue("'" + formatSeconds(totals.avgSec));
+}
+
+function computeTotals(dataRows) {
+  const timeSec = dataRows.reduce((sum, r) => sum + (Number(r[COL.timeSec]) || 0), 0);
+  const plays   = dataRows.reduce((sum, r) => sum + (Number(r[COL.playCount]) || 0), 0);
+  const count   = dataRows.length;
+  return {
+    count,
+    plays,
+    timeSec,
+    avgSec: count ? Math.round(timeSec / count) : 0
+  };
+}
+
+/* ---------------- Utility ---------------- */
+
+function formatSeconds(sec) {
+  sec = Math.round(sec);
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function emailToSheetName(email) {
+  if (!email) return "unknown_user";
+  return email
+    .toLowerCase()
+    .replace(/[\[\]\*\?\/\\:]/g, "_")
+    .substring(0, 100);
+}
+
+function getOrCreateUserSheet(email) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(SHEET_NAME);
-  if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
+  const sheetName = emailToSheetName(email);
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) sheet = ss.insertSheet(sheetName);
   return sheet;
+}
+
+/* ---------------- Summary ---------------- */
+
+function updateSummarySheet(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let summary = ss.getSheetByName("Summary");
+  if (!summary) {
+    summary = ss.insertSheet("Summary", 0);
+    summary.appendRow([
+      "Name", "Email", "Last Submission",
+      "Total Clips", "Total Time (mm:ss)",
+      "Avg Time per Clip", "Sheet Link"
+    ]);
+    summary.getRange(1, 1, 1, 7).setFontWeight("bold");
+    summary.setFrozenRows(1);
+  }
+
+  const email = data.email || "";
+  const userSheet = ss.getSheetByName(emailToSheetName(email));
+  const userDataRows = userSheet ? getExistingDataRows(userSheet) : [];
+  const totals = computeTotals(userDataRows);
+
+  const link = userSheet
+    ? `=HYPERLINK("#gid=${userSheet.getSheetId()}","Open ${emailToSheetName(email)}")`
+    : "";
+
+  const rows = summary.getDataRange().getValues();
+  const rowIndex = rows.findIndex((r, i) => i > 0 && r[1] === email);
+
+  const newRow = [
+    data.name || "",
+    email,
+    new Date(),
+    totals.count,
+    formatSeconds(totals.timeSec),
+    formatSeconds(totals.avgSec),
+    link
+  ];
+
+  if (rowIndex === -1) {
+    summary.appendRow(newRow);
+    if (link) summary.getRange(summary.getLastRow(), 7).setFormula(link);
+    const r = summary.getLastRow();
+    summary.getRange(r, 4).setNumberFormat("0");   // Total Clips
+    summary.getRange(r, 5).setNumberFormat("@");   // Total Time (mm:ss)
+    summary.getRange(r, 6).setNumberFormat("@");   // Avg Time per Clip
+  } else {
+    const r = rowIndex + 1;
+    summary.getRange(r, 1).setValue(newRow[0]);
+    summary.getRange(r, 3).setValue(newRow[2]);
+    summary.getRange(r, 4).setValue(newRow[3]);
+    summary.getRange(r, 5).setValue(newRow[4]);
+    summary.getRange(r, 6).setValue(newRow[5]);
+    if (link) summary.getRange(r, 7).setFormula(link);
+    summary.getRange(r, 4).setNumberFormat("0");
+    summary.getRange(r, 5).setNumberFormat("@");
+    summary.getRange(r, 6).setNumberFormat("@");
+  }
 }
