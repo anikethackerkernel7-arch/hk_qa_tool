@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Argos Training — Assessment</title>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --primary: #0d9488;
+    --primary-hover: #0f766e;
+    --primary-soft: #ccfbf1;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --radius: 10px;
+    --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+    --shadow-md: 0 4px 12px rgba(15,23,42,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .login-screen, .complete-screen {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #f0fdfa 0%, #f8fafc 100%);
+  }
+  .login-card, .complete-card, .card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 28px;
+    box-shadow: 0 20px 60px rgba(15,23,42,0.08);
+  }
+  .login-card { max-width: 420px; width: 100%; }
+  .complete-card { max-width: 720px; width: 100%; text-align: center; }
+  .complete-card .btn { margin-top: 8px; }
+  .login-logo {
+    width: 52px; height: 52px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+    border-radius: 12px;
+    display: grid; place-items: center;
+    color: white; font-size: 22px; margin-bottom: 16px;
+  }
+  .login-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .login-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+  .field { margin-bottom: 16px; }
+  .field-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .field-hint { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  input[type="email"], textarea, select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 14px; font-family: inherit; background: white;
+  }
+  textarea { min-height: 110px; resize: vertical; line-height: 1.6; }
+  input:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(13,148,136,0.12); }
+  .btn {
+    padding: 10px 18px; border-radius: 6px; font-size: 14px; font-weight: 600;
+    border: none; cursor: pointer;
+  }
+  .btn-primary { background: var(--primary); color: white; width: 100%; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+  .btn-secondary { background: white; color: var(--text); border: 1px solid var(--border); }
+  .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+  .btn-row .btn { width: auto; flex: 1; }
+
+  .app-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    color: white; padding: 14px 24px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .brand { font-weight: 600; display: flex; gap: 8px; align-items: center; }
+  .brand-tag {
+    background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 4px; font-size: 12px;
+  }
+  .user-chip {
+    background: rgba(255,255,255,0.15); padding: 6px 12px; border-radius: 20px;
+    display: flex; align-items: flex-start; gap: 8px; font-size: 13px;
+  }
+  .user-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: #86efac; margin-top: 5px; }
+  .user-chip-info { display: flex; flex-direction: column; line-height: 1.25; }
+  .user-chip-email { font-size: 11px; opacity: 0.85; }
+  .btn-header {
+    background: rgba(255,255,255,0.15); color: white;
+    border: 1px solid rgba(255,255,255,0.25); padding: 6px 12px;
+    border-radius: 6px; font-size: 12px; cursor: pointer; margin-left: 12px;
+  }
+  .progress-strip {
+    background: white; border-bottom: 1px solid var(--border);
+    padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+  }
+  .progress-label { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); }
+  .progress-bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--primary); width: 0%; transition: width 0.3s; }
+  .progress-count { font-weight: 600; white-space: nowrap; }
+
+  .workspace { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .card { margin-bottom: 16px; }
+  .card-title { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+  .intro-box {
+    background: #f0fdfa; border-left: 3px solid var(--primary);
+    padding: 10px 12px; border-radius: 0 6px 6px 0; color: var(--primary-hover);
+    margin-bottom: 16px; font-size: 13px;
+  }
+  .sample-block, .question-block {
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; background: #fff;
+  }
+  .sample-block h4, .question-block h4 { font-size: 13px; margin-bottom: 8px; color: var(--primary-hover); }
+  .sample-text, .option-text {
+    font-size: 13px; background: #f8fafc; border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px; margin-top: 8px; white-space: pre-wrap;
+  }
+  .audio-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+  .icon-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--primary); color: white; cursor: pointer; display: grid; place-items: center;
+  }
+  .option-list { display: grid; gap: 8px; margin-top: 10px; }
+  .option-item {
+    display: flex; gap: 10px; align-items: flex-start;
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px; cursor: pointer;
+  }
+  .option-item:hover, .option-item.selected { border-color: var(--primary); background: var(--primary-soft); }
+  .option-item input { margin-top: 3px; }
+  .feedback-sub {
+    color: var(--text-muted); font-size: 13px; margin: 8px 0 8px;
+  }
+  .feedback-legend {
+    color: var(--text-muted); font-size: 12px; margin: 0 0 16px; line-height: 1.45;
+  }
+  .feedback-legend .diff-ok,
+  .feedback-legend .diff-bad,
+  .feedback-legend .diff-miss {
+    font-weight: 600;
+  }
+  .feedback-panel {
+    text-align: left; margin: 0 0 16px; display: grid; gap: 16px;
+    max-height: min(60vh, 520px); overflow-y: auto; padding-right: 4px;
+  }
+  .feedback-section {
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+    background: #f8fafc;
+  }
+  .feedback-section h3 {
+    font-size: 14px; font-weight: 600; margin-bottom: 10px; color: var(--text);
+  }
+  .feedback-item {
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+    background: var(--surface); margin-bottom: 8px;
+  }
+  .feedback-item:last-child { margin-bottom: 0; }
+  .feedback-item-head {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; margin-bottom: 8px; flex-wrap: wrap;
+  }
+  .feedback-item-head strong { font-size: 13px; }
+  .feedback-badge {
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  }
+  .feedback-badge.ok { background: #dcfce7; color: #166534; }
+  .feedback-badge.bad { background: #fee2e2; color: #991b1b; }
+  .feedback-label {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.02em; margin: 8px 0 4px;
+  }
+  .feedback-label:first-of-type { margin-top: 0; }
+  .feedback-text {
+    font-size: 13px; line-height: 1.55; word-break: break-word;
+    white-space: pre-wrap;
+  }
+  .diff-ok { color: #15803d; }
+  .diff-bad { color: #dc2626; font-weight: 600; }
+  .diff-miss { color: #ca8a04; font-weight: 600; background: #fef9c3; border-radius: 2px; }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; background: var(--text); color: white;
+    padding: 12px 18px; border-radius: 8px; font-size: 13px; opacity: 0;
+    transform: translateY(10px); transition: all 0.25s; z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { background: var(--danger); }
+  .toast.success { background: var(--success); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-logo">◈</div>
+    <div class="login-title">Argos Assessment</div>
+    <div class="login-sub">Enter your registered email to start the first-round training assessment.</div>
+    <div class="field">
+      <label class="field-label" for="emailInput">Email address</label>
+      <input type="email" id="emailInput" placeholder="name@company.com" autocomplete="email" />
+      <div class="field-hint">Same registered emails as the practice tool. Name is assigned automatically.</div>
+    </div>
+    <button class="btn btn-primary" onclick="startSession()">Start assessment</button>
+  </div>
+</div>
+
+<div id="mainApp" class="hidden">
+  <header class="app-header">
+    <div class="brand">
+      <span>◈ Argos Training</span>
+      <span class="brand-tag">Assessment</span>
+    </div>
+    <div style="display:flex;align-items:center;">
+      <div class="user-chip">
+        <span class="dot"></span>
+        <div class="user-chip-info">
+          <span id="headerName">—</span>
+          <span class="user-chip-email" id="headerEmail">—</span>
+        </div>
+      </div>
+      <button class="btn-header" onclick="endSession()">End</button>
+    </div>
+  </header>
+  <div class="progress-strip">
+    <div class="progress-label">Progress</div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-count" id="progressCount">1 / 4</div>
+  </div>
+  <div class="workspace">
+    <div class="card" id="sectionCard"></div>
+  </div>
+</div>
+
+<div id="resultsScreen" class="complete-screen hidden">
+  <div class="complete-card">
+    <div class="login-logo" style="margin:0 auto 16px;">✓</div>
+    <h2>Assessment complete</h2>
+    <p class="feedback-sub">Review your answers against the correct ones below.</p>
+    <p class="feedback-legend">
+      <span class="diff-ok">Green</span> = correct match ·
+      <span class="diff-bad">Red</span> = wrong or extra in your answer ·
+      <span class="diff-miss">Yellow</span> = missing from your answer (shown on correct)
+    </p>
+    <div class="feedback-panel" id="feedbackPanel"></div>
+    <button class="btn btn-primary" onclick="endSession(true)">Done</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="shared-auth.js"></script>
+<script src="assessment-data.js"></script>
+<script>
+const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syftzSIkPvsKvOTiYO9VeUNSUg7LLDNOH6_4Le8T5X419Ayb8oSiLDli/exec";
+const SESSION_KEY = "argos_assessment_session";
+
+const SECTIONS = ["learn", "mcqA", "mcqB", "transcribe"];
+const SECTION_LABELS = {
+  learn: "Training material",
+  mcqA: "Choose the correct option (2 choices)",
+  mcqB: "Correct the given transcription:",
+  transcribe: "Transcribe the audios"
+};
+
+let ASSESSMENT_DATA = null;
+let state = {
+  name: "",
+  email: "",
+  sectionIndex: 0,
+  answers: { mcqA: {}, mcqB: {}, transcribe: {} },
+  startedAt: null,
+  sessionStartTime: null
+};
+let activeAudio = null;
+let activeAudioPath = null;
+
+function showToast(msg, type) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show " + (type || "");
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => { t.className = "toast"; }, 2600);
+}
+
+function saveSession() {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({
+    name: state.name,
+    email: state.email,
+    sectionIndex: state.sectionIndex,
+    answers: state.answers,
+    startedAt: state.startedAt,
+    sessionStartTime: state.sessionStartTime
+  }));
+}
+
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s.email || !lookupAllowedUser(s.email)) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function loadData() {
+  if (ASSESSMENT_DATA) return ASSESSMENT_DATA;
+  if (window.ASSESSMENT_DATA_EMBEDDED) {
+    ASSESSMENT_DATA = window.ASSESSMENT_DATA_EMBEDDED;
+    return ASSESSMENT_DATA;
+  }
+  throw new Error("Assessment data not loaded");
+}
+
+function normalizeText(s) {
+  return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+function similarityPercent(answer, gold) {
+  const a = normalizeText(answer);
+  const g = normalizeText(gold);
+  if (!a) return 0;
+  if (!g) return 0;
+  const maxLen = Math.max(a.length, g.length);
+  if (!maxLen) return 100;
+  return Math.round((1 - levenshtein(a, g) / maxLen) * 100);
+}
+
+function updatePlayButtons(playingPath) {
+  document.querySelectorAll(".icon-btn[data-audio]").forEach((btn) => {
+    const path = btn.getAttribute("data-audio");
+    const isPlaying = !!playingPath && path === playingPath && activeAudio && !activeAudio.paused;
+    btn.textContent = isPlaying ? "⏸" : "▶";
+    btn.title = isPlaying ? "Pause" : "Play";
+  });
+}
+
+function stopAudio() {
+  if (activeAudio) {
+    try { activeAudio.pause(); } catch (_) {}
+  }
+  activeAudio = null;
+  activeAudioPath = null;
+  updatePlayButtons(null);
+}
+
+function playFile(path) {
+  if (!path) {
+    showToast("Audio file is missing.", "error");
+    return;
+  }
+
+  // Same clip: toggle pause / resume
+  if (activeAudio && activeAudioPath === path) {
+    if (!activeAudio.paused) {
+      try { activeAudio.pause(); } catch (_) {}
+      updatePlayButtons(null);
+      return;
+    }
+    activeAudio.play().catch(() => showToast("Could not play audio.", "error"));
+    updatePlayButtons(path);
+    return;
+  }
+
+  // Different clip: stop current and play new
+  if (activeAudio) {
+    try { activeAudio.pause(); } catch (_) {}
+  }
+  activeAudio = new Audio(path);
+  activeAudioPath = path;
+  activeAudio.addEventListener("ended", () => {
+    updatePlayButtons(null);
+  });
+  activeAudio.play().catch(() => showToast("Could not play audio.", "error"));
+  updatePlayButtons(path);
+}
+
+function updateProgress() {
+  const total = SECTIONS.length;
+  const current = state.sectionIndex + 1;
+  document.getElementById("progressFill").style.width = ((state.sectionIndex / total) * 100) + "%";
+  document.getElementById("progressCount").textContent = `${current} / ${total}`;
+}
+
+function renderLearn(card) {
+  const d = ASSESSMENT_DATA;
+  card.innerHTML = `
+    <div class="card-title">${SECTION_LABELS.learn}</div>
+    <div class="intro-box">${d.intro}</div>
+    ${d.learnSamples.map((s, i) => `
+      <div class="sample-block">
+        <h4>Sample ${i + 1}: ${s.id}</h4>
+        <div class="audio-row">
+          <button type="button" class="icon-btn" data-audio="${s.file}" onclick="playFile('${s.file}')" title="Play">▶</button>
+          <span style="font-size:12px;color:var(--text-muted);">${s.file.split("/").pop()}</span>
+        </div>
+        <div class="sample-text">${escapeHtml(s.text)}</div>
+      </div>
+    `).join("")}
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="nextSection()">Next →</button>
+    </div>
+  `;
+}
+
+function renderMcq(card, key, title) {
+  const items = ASSESSMENT_DATA[key];
+  const answers = state.answers[key];
+  card.innerHTML = `
+    <div class="card-title">${title}</div>
+    <div class="intro-box">Listen to each clip and choose the best matching transcript.</div>
+    ${items.map((q, qi) => {
+      const selected = answers[q.id] || "";
+      const keys = Object.keys(q.options || {});
+      return `
+        <div class="question-block">
+          <h4>Question ${qi + 1}: ${q.id}</h4>
+          <div class="audio-row">
+            <button type="button" class="icon-btn" data-audio="${q.file}" onclick="playFile('${q.file}')" title="Play">▶</button>
+            <span style="font-size:12px;color:var(--text-muted);">${q.file.split("/").pop()}</span>
+          </div>
+          <div class="option-list">
+            ${keys.map(k => `
+              <label class="option-item ${selected === k ? "selected" : ""}">
+                <input type="radio" name="${key}_${q.id}" value="${k}" ${selected === k ? "checked" : ""}
+                  onchange="selectMcq('${key}','${q.id}','${k}')" />
+                <div>
+                  <strong>Option ${k}</strong>
+                  <div class="option-text">${escapeHtml(q.options[k])}</div>
+                </div>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }).join("")}
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
+      <button class="btn btn-primary" onclick="nextSection()">Next →</button>
+    </div>
+  `;
+}
+
+function mcqBAnswerText(q) {
+  const saved = state.answers.mcqB[q.id];
+  // Legacy radio keys from old sessions — treat as unset
+  if (saved === "1" || saved === "2" || saved === "3") {
+    return q.incorrect || "";
+  }
+  if (saved == null) {
+    return q.incorrect || "";
+  }
+  return saved;
+}
+
+function ensureMcqBAnswersSeeded() {
+  const items = ASSESSMENT_DATA.mcqB || [];
+  let changed = false;
+  for (const q of items) {
+    const saved = state.answers.mcqB[q.id];
+    if (saved == null || saved === "1" || saved === "2" || saved === "3") {
+      state.answers.mcqB[q.id] = q.incorrect || "";
+      changed = true;
+    }
+  }
+  if (changed) saveSession();
+}
+
+function renderMcqB(card) {
+  ensureMcqBAnswersSeeded();
+  const items = ASSESSMENT_DATA.mcqB || [];
+  card.innerHTML = `
+    <div class="card-title">${SECTION_LABELS.mcqB}</div>
+    <div class="intro-box">Listen to each clip and edit the given transcript so it matches what is spoken.</div>
+    ${items.map((q, i) => `
+      <div class="question-block">
+        <h4>Clip ${i + 1}: ${q.id}</h4>
+        <div class="audio-row">
+          <button type="button" class="icon-btn" data-audio="${q.file}" onclick="playFile('${q.file}')" title="Play">▶</button>
+          <span style="font-size:12px;color:var(--text-muted);">${q.file.split("/").pop()}</span>
+        </div>
+        <textarea id="mcqb_${q.id}" placeholder="Edit the transcription..."
+          oninput="saveMcqB('${q.id}', this.value)">${escapeHtml(mcqBAnswerText(q))}</textarea>
+      </div>
+    `).join("")}
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
+      <button class="btn btn-primary" onclick="nextSection()">Next →</button>
+    </div>
+  `;
+}
+
+function renderTranscribe(card) {
+  const items = ASSESSMENT_DATA.transcribe;
+  card.innerHTML = `
+    <div class="card-title">${SECTION_LABELS.transcribe}</div>
+    <div class="intro-box">Listen carefully and type exactly what you hear (spoken style — tags, fillers, stutters as spoken).</div>
+    ${items.map((q, i) => `
+      <div class="question-block">
+        <h4>Clip ${i + 1}: ${q.id}</h4>
+        <div class="audio-row">
+          <button type="button" class="icon-btn" data-audio="${q.file}" onclick="playFile('${q.file}')" title="Play">▶</button>
+          <span style="font-size:12px;color:var(--text-muted);">${q.file.split("/").pop()}</span>
+        </div>
+        <textarea id="tr_${q.id}" placeholder="Type your transcription..."
+          oninput="saveTranscribe('${q.id}', this.value)">${escapeHtml(state.answers.transcribe[q.id] || "")}</textarea>
+      </div>
+    `).join("")}
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
+      <button class="btn btn-primary" id="submitAssessmentBtn" onclick="submitAssessment()">Submit assessment</button>
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function selectMcq(section, clipId, key) {
+  state.answers[section][clipId] = key;
+  saveSession();
+  // Keep scroll position — option click only updates selection highlight
+  renderSection(false);
+}
+
+function saveTranscribe(clipId, value) {
+  state.answers.transcribe[clipId] = value;
+  saveSession();
+}
+
+function saveMcqB(clipId, value) {
+  state.answers.mcqB[clipId] = value;
+  saveSession();
+}
+
+function renderSection(scrollToTop) {
+  stopAudio();
+  updateProgress();
+  const card = document.getElementById("sectionCard");
+  const key = SECTIONS[state.sectionIndex];
+  if (key === "learn") renderLearn(card);
+  else if (key === "mcqA") renderMcq(card, "mcqA", SECTION_LABELS.mcqA);
+  else if (key === "mcqB") renderMcqB(card);
+  else renderTranscribe(card);
+  // Only scroll on Next/Back (or explicit true) — never on option re-render
+  if (scrollToTop) {
+    if (card && typeof card.scrollIntoView === "function") {
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+}
+
+function validateCurrentSection() {
+  const key = SECTIONS[state.sectionIndex];
+  if (key === "learn") return true;
+  if (key === "mcqA") {
+    for (const q of ASSESSMENT_DATA.mcqA) {
+      if (!state.answers.mcqA[q.id]) {
+        showToast(`Please answer ${q.id}.`, "error");
+        return false;
+      }
+    }
+    return true;
+  }
+  if (key === "mcqB") {
+    for (const q of ASSESSMENT_DATA.mcqB) {
+      const text = mcqBAnswerText(q);
+      if (!normalizeText(text)) {
+        showToast(`Please correct ${q.id}.`, "error");
+        return false;
+      }
+    }
+    return true;
+  }
+  if (key === "transcribe") {
+    for (const q of ASSESSMENT_DATA.transcribe) {
+      if (!normalizeText(state.answers.transcribe[q.id] || "")) {
+        showToast(`Please transcribe ${q.id}.`, "error");
+        return false;
+      }
+    }
+    return true;
+  }
+  return true;
+}
+
+function nextSection() {
+  if (!validateCurrentSection()) return;
+  if (state.sectionIndex < SECTIONS.length - 1) {
+    state.sectionIndex++;
+    saveSession();
+    renderSection(true);
+  }
+}
+
+function prevSection() {
+  if (state.sectionIndex > 0) {
+    state.sectionIndex--;
+    saveSession();
+    renderSection(true);
+  }
+}
+
+function scoreAssessment() {
+  const w = ASSESSMENT_DATA.weights;
+  const mcqADetail = ASSESSMENT_DATA.mcqA.map(q => {
+    const selected = state.answers.mcqA[q.id] || "";
+    const correct = selected === q.correctKey;
+    // If multiple options share identical gold text, accept any matching text
+    const selectedText = normalizeText(q.options[selected] || "");
+    const correctText = normalizeText(q.options[q.correctKey] || "");
+    const isCorrect = !!(correct || (selectedText && selectedText === correctText));
+    const points = isCorrect ? w.mcqAPerItem : 0;
+    return {
+      clipId: q.id,
+      selected,
+      correctKey: q.correctKey,
+      points,
+      isCorrect,
+      answer: q.options[selected] || "",
+      correctAnswer: q.options[q.correctKey] || ""
+    };
+  });
+  const mcqBDetail = ASSESSMENT_DATA.mcqB.map(q => {
+    const answer = mcqBAnswerText(q);
+    const similarity = similarityPercent(answer, q.correct || "");
+    const points = Math.round((similarity / 100) * (w.mcqBPerItem || 0));
+    return {
+      clipId: q.id,
+      answer,
+      correct: q.correct || "",
+      incorrect: q.incorrect || "",
+      similarity,
+      points
+    };
+  });
+  const trDetail = ASSESSMENT_DATA.transcribe.map(q => {
+    const answer = state.answers.transcribe[q.id] || "";
+    const similarity = similarityPercent(answer, q.gold);
+    return { clipId: q.id, answer, gold: q.gold, similarity };
+  });
+
+  const mcqAScore = mcqADetail.reduce((s, x) => s + x.points, 0);
+  const mcqBScore = mcqBDetail.reduce((s, x) => s + x.points, 0);
+  const avgSim = trDetail.length
+    ? trDetail.reduce((s, x) => s + x.similarity, 0) / trDetail.length
+    : 0;
+  const transcribeScore = Math.round((avgSim / 100) * w.transcribeMax);
+  const overallScore = Math.max(0, Math.min(100, Math.round(mcqAScore + mcqBScore + transcribeScore)));
+
+  return { mcqAScore, mcqBScore, transcribeScore, overallScore, mcqADetail, mcqBDetail, trDetail };
+}
+
+function tokenizeWords(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function lcsTable(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+      else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp;
+}
+
+/** Word-level LCS match flags (case-insensitive). */
+function wordDiffMatches(answerTokens, correctTokens) {
+  const aNorm = answerTokens.map((t) => t.toLowerCase());
+  const cNorm = correctTokens.map((t) => t.toLowerCase());
+  const dp = lcsTable(aNorm, cNorm);
+  const matchedA = new Array(answerTokens.length).fill(false);
+  const matchedC = new Array(correctTokens.length).fill(false);
+  let i = answerTokens.length;
+  let j = correctTokens.length;
+  while (i > 0 && j > 0) {
+    if (aNorm[i - 1] === cNorm[j - 1]) {
+      matchedA[i - 1] = true;
+      matchedC[j - 1] = true;
+      i--;
+      j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+  return { matchedA, matchedC };
+}
+
+/**
+ * Word-level diff:
+ * - Your answer: green = matched, red = wrong/extra
+ * - Correct answer: green = present in answer, yellow = missing from answer
+ */
+function renderTypedDiff(answer, correct) {
+  const aToks = tokenizeWords(answer);
+  const cToks = tokenizeWords(correct);
+
+  if (!aToks.length && !cToks.length) {
+    return {
+      answerHtml: '<span class="diff-ok">(empty)</span>',
+      correctHtml: '<span class="diff-ok">(empty)</span>'
+    };
+  }
+
+  if (!aToks.length) {
+    return {
+      answerHtml: '<span class="diff-bad">(no answer)</span>',
+      correctHtml: cToks.map((tok) =>
+        `<span class="diff-miss">${escapeHtml(tok)}</span>`
+      ).join(" ")
+    };
+  }
+
+  if (!cToks.length) {
+    return {
+      answerHtml: aToks.map((tok) =>
+        `<span class="diff-bad">${escapeHtml(tok)}</span>`
+      ).join(" "),
+      correctHtml: '<span class="diff-miss">(no gold text)</span>'
+    };
+  }
+
+  const { matchedA, matchedC } = wordDiffMatches(aToks, cToks);
+
+  const answerHtml = aToks.map((tok, idx) => {
+    const cls = matchedA[idx] ? "diff-ok" : "diff-bad";
+    return `<span class="${cls}">${escapeHtml(tok)}</span>`;
+  }).join(" ");
+
+  const correctHtml = cToks.map((tok, idx) => {
+    const cls = matchedC[idx] ? "diff-ok" : "diff-miss";
+    return `<span class="${cls}">${escapeHtml(tok)}</span>`;
+  }).join(" ");
+
+  return { answerHtml, correctHtml };
+}
+
+function feedbackBadge(ok) {
+  return ok
+    ? '<span class="feedback-badge ok">Correct</span>'
+    : '<span class="feedback-badge bad">Incorrect</span>';
+}
+
+function renderFeedback(scores) {
+  const panel = document.getElementById("feedbackPanel");
+  if (!panel) return;
+
+  const mcqAHtml = (scores.mcqADetail || []).map((d) => `
+    <div class="feedback-item">
+      <div class="feedback-item-head">
+        <strong>${escapeHtml(d.clipId)}</strong>
+        ${feedbackBadge(!!d.isCorrect)}
+      </div>
+      <div class="feedback-label">Your answer</div>
+      <div class="feedback-text">${escapeHtml(d.answer || "(none)")}</div>
+      <div class="feedback-label">Correct answer</div>
+      <div class="feedback-text">${escapeHtml(d.correctAnswer || "")}</div>
+    </div>
+  `).join("");
+
+  const mcqBHtml = (scores.mcqBDetail || []).map((d) => {
+    const exact = normalizeText(d.answer) === normalizeText(d.correct);
+    const diff = renderTypedDiff(d.answer, d.correct);
+    return `
+      <div class="feedback-item">
+        <div class="feedback-item-head">
+          <strong>${escapeHtml(d.clipId)}</strong>
+          ${feedbackBadge(exact)}
+        </div>
+        <div class="feedback-label">Your answer</div>
+        <div class="feedback-text">${diff.answerHtml}</div>
+        <div class="feedback-label">Correct answer</div>
+        <div class="feedback-text">${diff.correctHtml}</div>
+      </div>
+    `;
+  }).join("");
+
+  const trHtml = (scores.trDetail || []).map((d) => {
+    const exact = normalizeText(d.answer) === normalizeText(d.gold);
+    const diff = renderTypedDiff(d.answer, d.gold);
+    return `
+      <div class="feedback-item">
+        <div class="feedback-item-head">
+          <strong>${escapeHtml(d.clipId)}</strong>
+          ${feedbackBadge(exact)}
+        </div>
+        <div class="feedback-label">Your answer</div>
+        <div class="feedback-text">${diff.answerHtml}</div>
+        <div class="feedback-label">Correct answer</div>
+        <div class="feedback-text">${diff.correctHtml}</div>
+      </div>
+    `;
+  }).join("");
+
+  panel.innerHTML = `
+    <div class="feedback-section">
+      <h3>${escapeHtml(SECTION_LABELS.mcqA)}</h3>
+      ${mcqAHtml || "<div class=\"feedback-item\">No answers</div>"}
+    </div>
+    <div class="feedback-section">
+      <h3>${escapeHtml(SECTION_LABELS.mcqB)}</h3>
+      ${mcqBHtml || "<div class=\"feedback-item\">No answers</div>"}
+    </div>
+    <div class="feedback-section">
+      <h3>${escapeHtml(SECTION_LABELS.transcribe)}</h3>
+      ${trHtml || "<div class=\"feedback-item\">No answers</div>"}
+    </div>
+  `;
+}
+
+async function submitAssessment() {
+  if (!validateCurrentSection()) return;
+  const btn = document.getElementById("submitAssessmentBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Scoring…"; }
+
+  const scores = scoreAssessment();
+  const submittedAt = new Date().toISOString();
+  const payload = {
+    type: "assessment",
+    name: state.name,
+    email: state.email,
+    overallScore: scores.overallScore,
+    mcqAScore: scores.mcqAScore,
+    mcqBScore: scores.mcqBScore,
+    transcribeScore: scores.transcribeScore,
+    mcqA: scores.mcqADetail,
+    mcqB: scores.mcqBDetail,
+    transcribe: scores.trDetail,
+    submittedAt,
+    sessionElapsedSec: Math.round((Date.now() - state.sessionStartTime) / 1000)
+  };
+
+  try {
+    await sendToSheets(payload);
+  } catch (err) {
+    console.error(err);
+    showToast("Assessment complete, but sheet sync may have failed.", "error");
+  }
+
+  renderFeedback(scores);
+  document.getElementById("mainApp").classList.add("hidden");
+  document.getElementById("resultsScreen").classList.remove("hidden");
+  clearSession();
+  showToast("Assessment submitted.", "success");
+}
+
+async function sendToSheets(payload) {
+  if (!SHEETS_ENDPOINT || SHEETS_ENDPOINT.includes("PASTE_YOUR")) {
+    console.warn("Sheets endpoint not configured", payload);
+    throw new Error("Sheets endpoint not configured");
+  }
+  await fetch(SHEETS_ENDPOINT, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  });
+}
+
+async function startSession() {
+  const email = document.getElementById("emailInput").value.trim();
+  if (!email || !email.includes("@")) {
+    showToast("Please enter a valid email address.", "error");
+    return;
+  }
+  const user = lookupAllowedUser(email);
+  if (!user) {
+    showToast("This email is not registered for training. Contact your trainer.", "error");
+    return;
+  }
+  try {
+    loadData();
+  } catch (err) {
+    console.error(err);
+    showToast("Could not load assessment data.", "error");
+    return;
+  }
+  state = {
+    name: user.name,
+    email: user.email,
+    sectionIndex: 0,
+    answers: { mcqA: {}, mcqB: {}, transcribe: {} },
+    startedAt: new Date().toISOString(),
+    sessionStartTime: Date.now()
+  };
+  document.getElementById("headerName").textContent = user.name;
+  document.getElementById("headerEmail").textContent = user.email;
+  saveSession();
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("mainApp").classList.remove("hidden");
+  renderSection();
+}
+
+async function resumeSession(session) {
+  try {
+    loadData();
+  } catch (err) {
+    console.error(err);
+    showToast("Could not load assessment data.", "error");
+    return;
+  }
+  const user = lookupAllowedUser(session.email);
+  state = {
+    name: user.name,
+    email: user.email,
+    sectionIndex: Math.min(session.sectionIndex || 0, SECTIONS.length - 1),
+    answers: session.answers || { mcqA: {}, mcqB: {}, transcribe: {} },
+    startedAt: session.startedAt || new Date().toISOString(),
+    sessionStartTime: session.sessionStartTime || Date.now()
+  };
+  document.getElementById("headerName").textContent = state.name;
+  document.getElementById("headerEmail").textContent = state.email;
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("mainApp").classList.remove("hidden");
+  renderSection();
+  showToast(`Welcome back, ${state.name}.`, "success");
+}
+
+function endSession(skipConfirm) {
+  if (!skipConfirm && !confirm("End this assessment? Progress will be cleared.")) return;
+  stopAudio();
+  clearSession();
+  state = {
+    name: "", email: "", sectionIndex: 0,
+    answers: { mcqA: {}, mcqB: {}, transcribe: {} },
+    startedAt: null, sessionStartTime: null
+  };
+  document.getElementById("mainApp").classList.add("hidden");
+  document.getElementById("resultsScreen").classList.add("hidden");
+  document.getElementById("loginScreen").classList.remove("hidden");
+  document.getElementById("emailInput").value = "";
+  document.getElementById("emailInput").focus();
+}
+
+(async function init() {
+  const session = loadSession();
+  if (session) {
+    await resumeSession(session);
+    return;
+  }
+  document.getElementById("emailInput").focus();
+})();
+
+document.getElementById("emailInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") startSession();
+});
+</script>
+</body>
+</html>

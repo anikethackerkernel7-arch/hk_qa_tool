@@ -772,6 +772,8 @@
 
 <div id="toast" class="toast"></div>
 
+<script src="shared-auth.js"></script>
+<script src="clip-texts.js"></script>
 <script>
 /* =========================================================
    CONFIGURATION
@@ -814,47 +816,34 @@ const AUDIO_QUEUE = [
 const NATIVITY_OPTIONS = ["Native", "Non-Native", "Unknown", "TTS"];
 const GENDER_OPTIONS = ["Male", "Female", "Unknown"];
 
-// Only these emails can log in. Name is fixed per email (case-insensitive lookup).
-const ALLOWED_USERS = {
-  "dishikamore205@gmail.com": "Dishika More",
-  "fatimagoshiya5@gmail.com": "Goshiya Fatima",
-  "dubeyrishika53@gmail.com": "Rishika Dubey",
-  "kaharashish657@gmail.com": "Ashish Kahar",
-  "ramji@gmail.com": "Amrendra Pratap Singh",
-  "murtuza21@gmail.com": "Murtaza Ali",
-  "jaknoreshubham@gmail.com": "Shubham Jaknore",
-  "abhaysinghhrr744@gmail.com": "Abhay Rathore",
-  "poojaverma462023@gmail.com": "Pooja Verma",
-  "raiaman9122@gmail.com": "Aman Rai",
-  "syedrayyansajid@gmail.com": "Syed Rayyan Sajid",
-  "adnan119786@gmail.com": "Mohannad Adnan",
-  "garimamukati81@gmail.com": "Garima Mukati",
-  "khantahoor568@gmail.com": "Tahur Khan",
-  "vaishnavisharma11505@gmail.com": "Vaishnavi Sharma",
-  "mahakvishwakarma848@gmail.com": "Mahak Vishwakarma",
-  "riyanagwani3032004@gmail.com": "Riyan Agwani",
-  "yashtupkar6@gmail.com": "Yash Tupkar",
-  "utkarshchurariya19@gmail.com": "Utkarsh Churariya",
-};
-
 const SESSION_KEY = "argos_training_session";
 const CLIP_TEXTS_URL = "clip-texts.json";
 let CLIP_TEXTS = {};
 
-function lookupAllowedUser(email) {
-  const key = (email || "").trim().toLowerCase();
-  const name = ALLOWED_USERS[key];
-  return name ? { email: key, name } : null;
-}
-
 async function loadClipTexts() {
   if (CLIP_TEXTS && Object.keys(CLIP_TEXTS).length) return CLIP_TEXTS;
-  const res = await fetch(CLIP_TEXTS_URL);
-  if (!res.ok) {
-    throw new Error("Could not load clip-texts.json");
+
+  // file:// cannot fetch JSON — use embedded script first (same pattern as assessment)
+  if (window.CLIP_TEXTS_EMBEDDED && typeof window.CLIP_TEXTS_EMBEDDED === "object") {
+    CLIP_TEXTS = window.CLIP_TEXTS_EMBEDDED;
+    return CLIP_TEXTS;
   }
-  CLIP_TEXTS = await res.json();
-  return CLIP_TEXTS;
+
+  try {
+    const res = await fetch(CLIP_TEXTS_URL);
+    if (!res.ok) {
+      throw new Error("Could not load clip-texts.json");
+    }
+    const data = await res.json();
+    if (!data || typeof data !== "object") {
+      throw new Error("Invalid clip-texts.json");
+    }
+    CLIP_TEXTS = data;
+    return CLIP_TEXTS;
+  } catch (err) {
+    console.error(err);
+    throw new Error("Could not load clip texts");
+  }
 }
 
 function clipTextsFor(clipId) {

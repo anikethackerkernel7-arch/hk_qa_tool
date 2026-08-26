@@ -1,5 +1,9 @@
 /**
- * Argos Training — Google Sheets receiver (v8)
+ * Argos Training — Google Sheets receiver (v9)
+ *
+ * New in v9 (additive):
+ *  - Assessment submissions (data.type === "assessment") append to shared
+ *    "Assessment" sheet. Existing per-user practice path is unchanged.
  *
  * New in v8:
  *  - "Incorrect Text" and "Original Text" columns (after Written)
@@ -60,6 +64,11 @@ const TOTAL_MARKERS = ["TOTAL", "AVG", "SKIPPED CLIPS"];
 function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
+
+    // Assessment flow — shared sheet, append-only (does not touch per-user sheets)
+    if (data.type === "assessment") {
+      return handleAssessmentPost(data);
+    }
 
     // Ignore skipped submissions — don't save them to the sheet
     if (data.skipped === true) {
@@ -333,3 +342,108 @@ function updateSummarySheet(data) {
     summary.getRange(r, 6).setNumberFormat("@");
   }
 }
+
+/* =========================================================
+   ASSESSMENT (v9 additive) — shared sheet, append-only
+   Existing practice helpers above are intentionally unchanged.
+   ========================================================= */
+
+const ASSESSMENT_SHEET_NAME = "Assessment";
+
+const ASSESSMENT_HEADERS = [
+  "Timestamp",
+  "Name",
+  "Email",
+  "OverallScore",
+  "McqAScore",
+  "McqBScore",
+  "TranscribeScore",
+  "McqADetail",
+  "McqBDetail",
+  "TranscribeDetail",
+  "SessionElapsedSec",
+  "SubmittedAt"
+];
+
+function handleAssessmentPost(data) {
+  try {
+    const sheet = getOrCreateAssessmentSheet();
+    ensureAssessmentHeaders(sheet);
+
+    if (isDuplicateAssessment(sheet, data)) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, ignored: "duplicate" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    sheet.appendRow(buildAssessmentRow(data));
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getOrCreateAssessmentSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(ASSESSMENT_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(ASSESSMENT_SHEET_NAME);
+  return sheet;
+}
+
+function ensureAssessmentHeaders(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(ASSESSMENT_HEADERS);
+    sheet.getRange(1, 1, 1, ASSESSMENT_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    return;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  ASSESSMENT_HEADERS.forEach((header, i) => {
+    if (existing[i] !== header) {
+      sheet.getRange(1, i + 1).setValue(header).setFontWeight("bold");
+    }
+  });
+  sheet.setFrozenRows(1);
+}
+
+function isDuplicateAssessment(sheet, data) {
+  const submittedAt = String(data.submittedAt || "").trim();
+  const email = String(data.email || "").trim();
+  if (!submittedAt || !email) return false;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+
+  // Email = col 3 (index 2), SubmittedAt = col 12 (index 11)
+  // getRange(row, col, lastRow, lastCol) — use lastRow, not lastRow-1
+  // (lastRow-1 throws when only one data row exists and skips the latest row)
+  const values = sheet.getRange(2, 1, lastRow, ASSESSMENT_HEADERS.length).getValues();
+  return values.some(r =>
+    String(r[2] || "").trim() === email &&
+    String(r[11] || "").trim() === submittedAt
+  );
+}
+
+function buildAssessmentRow(data) {
+  return [
+    data.timestamp || new Date().toISOString(),
+    data.name || "",
+    data.email || "",
+    data.overallScore != null ? data.overallScore : "",
+    data.mcqAScore != null ? data.mcqAScore : "",
+    data.mcqBScore != null ? data.mcqBScore : "",
+    data.transcribeScore != null ? data.transcribeScore : "",
+    JSON.stringify(data.mcqA || []),
+    JSON.stringify(data.mcqB || []),
+    JSON.stringify(data.transcribe || []),
+    data.sessionElapsedSec != null ? data.sessionElapsedSec : "",
+    data.submittedAt || ""
+  ];
+}
+

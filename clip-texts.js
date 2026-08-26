@@ -1,4 +1,4 @@
-{
+window.CLIP_TEXTS_EMBEDDED = {
   "clip_01": {
     "original": "regional issues um so uh th- the when we go into these meetings y- y- you see the same people that are dealing with uh with uh issues throughout the middle east",
     "incorrect": "regional issues um so uh the when we go into these meetings y- y- you see the same people that are dealing with uh with uh issues throughout the middle east"
@@ -99,4 +99,4 @@
     "original": "oh that's good to know wow you have been really helpful thank you so much for answering my questions about wi-fi security the internet everything you have been really helpful thank you",
     "incorrect": "oh that's good to know wow you have been helpful thank you so much for answering my questions about wi-fi security the internet everything you have been really helpful thank you"
   }
-}
+};
