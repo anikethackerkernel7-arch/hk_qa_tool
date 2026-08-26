@@ -38,7 +38,7 @@ window.ASSESSMENT_DATA_EMBEDDED = {
       "correctKey": "1",
       "options": {
         "1": "oh they might have changed it but 'cause i don't i like now i don't mind it but like when i was a kid it was like i it was just too sticky but",
-        "2": "oh they might have changed it but 'cause i don't i like now i don't mind it but like when i was a kid it was like i it was just too sticky but"
+        "2": "oh they might have changed it but 'cause i don't i like now i don't mind it but like when i was a kid it was like it was too sticky but"
       }
     },
     {

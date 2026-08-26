@@ -106,6 +106,63 @@
   .progress-count { font-weight: 600; white-space: nowrap; }
 
   .workspace { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .workspace.with-hints {
+    max-width: 1180px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 20px;
+    align-items: start;
+  }
+  .workspace.with-hints .card { margin-bottom: 0; }
+  .hint-sidebar {
+    position: sticky;
+    top: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 14px;
+    box-shadow: var(--shadow-sm);
+  }
+  .hint-sidebar.hidden { display: none !important; }
+  .hint-sidebar h3 {
+    font-size: 13px; font-weight: 600; margin-bottom: 8px;
+  }
+  .hint-sidebar-legend {
+    font-size: 12px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.45;
+  }
+  .hint-sidebar-total {
+    font-size: 13px; font-weight: 600; margin-bottom: 10px;
+    padding: 8px 10px; border-radius: 8px; background: #fff7ed; border: 1px solid #fed7aa;
+  }
+  .hint-sidebar-total.done {
+    background: #dcfce7; border-color: #bbf7d0; color: #166534;
+  }
+  .hint-clip-row {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border);
+  }
+  .hint-clip-row:last-child { border-bottom: none; }
+  .hint-clip-row .remaining { font-weight: 600; color: #c2410c; }
+  .hint-clip-row .remaining.zero { color: #15803d; }
+  .hint-preview {
+    margin-top: 8px; font-size: 13px; line-height: 1.45;
+    word-break: break-word;
+    background: #f8fafc; border: 1px dashed var(--border);
+    border-radius: 6px; padding: 6px 10px;
+  }
+  .hint-preview-label {
+    font-size: 11px; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; margin: 0 0 2px;
+  }
+  .hint-preview-body {
+    white-space: pre-wrap; line-height: 1.45;
+  }
+  @media (max-width: 900px) {
+    .workspace.with-hints {
+      grid-template-columns: 1fr;
+    }
+    .hint-sidebar { position: static; }
+  }
   .card { margin-bottom: 16px; }
   .card-title { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
   .intro-box {
@@ -231,8 +288,17 @@
     <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
     <div class="progress-count" id="progressCount">1 / 4</div>
   </div>
-  <div class="workspace">
+  <div class="workspace" id="workspace">
     <div class="card" id="sectionCard"></div>
+    <aside class="hint-sidebar hidden" id="hintSidebar" aria-label="Transcription hints">
+      <h3>Hints</h3>
+      <div class="hint-sidebar-legend">
+        <span class="diff-ok">Green</span> = match ·
+        <span class="diff-bad">Red</span> = wrong or extra
+      </div>
+      <div class="hint-sidebar-total" id="hintSidebarTotal">—</div>
+      <div id="hintSidebarList"></div>
+    </aside>
   </div>
 </div>
 
@@ -274,7 +340,8 @@ let state = {
   sectionIndex: 0,
   answers: { mcqA: {}, mcqB: {}, transcribe: {} },
   startedAt: null,
-  sessionStartTime: null
+  sessionStartTime: null,
+  showTypingHints: false
 };
 let activeAudio = null;
 let activeAudioPath = null;
@@ -498,12 +565,13 @@ function ensureMcqBAnswersSeeded() {
 
 function renderMcqB(card) {
   ensureMcqBAnswersSeeded();
+  setWorkspaceHintsMode(true);
   const items = ASSESSMENT_DATA.mcqB || [];
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.mcqB}</div>
-    <div class="intro-box">Listen to each clip and edit the given transcript so it matches what is spoken.</div>
+    <div class="intro-box">Listen to each clip and edit the given transcript so it matches what is spoken. Click Next to check — you can continue only when every clip is correct.</div>
     ${items.map((q, i) => `
-      <div class="question-block">
+      <div class="question-block" data-clip-id="${q.id}">
         <h4>Clip ${i + 1}: ${q.id}</h4>
         <div class="audio-row">
           <button type="button" class="icon-btn" data-audio="${q.file}" onclick="playFile('${q.file}')" title="Play">▶</button>
@@ -511,6 +579,7 @@ function renderMcqB(card) {
         </div>
         <textarea id="mcqb_${q.id}" placeholder="Edit the transcription..."
           oninput="saveMcqB('${q.id}', this.value)">${escapeHtml(mcqBAnswerText(q))}</textarea>
+        <div class="hint-preview hidden" id="hint_mcqb_${q.id}"></div>
       </div>
     `).join("")}
     <div class="btn-row">
@@ -518,15 +587,18 @@ function renderMcqB(card) {
       <button class="btn btn-primary" onclick="nextSection()">Next →</button>
     </div>
   `;
+  if (state.showTypingHints) showTypingHints("mcqB");
+  else hideTypingHints();
 }
 
 function renderTranscribe(card) {
+  setWorkspaceHintsMode(true);
   const items = ASSESSMENT_DATA.transcribe;
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.transcribe}</div>
-    <div class="intro-box">Listen carefully and type exactly what you hear (spoken style — tags, fillers, stutters as spoken).</div>
+    <div class="intro-box">Listen carefully and type exactly what you hear (spoken style — tags, fillers, stutters as spoken). Click Submit to check — you can finish only when every clip is correct.</div>
     ${items.map((q, i) => `
-      <div class="question-block">
+      <div class="question-block" data-clip-id="${q.id}">
         <h4>Clip ${i + 1}: ${q.id}</h4>
         <div class="audio-row">
           <button type="button" class="icon-btn" data-audio="${q.file}" onclick="playFile('${q.file}')" title="Play">▶</button>
@@ -534,6 +606,7 @@ function renderTranscribe(card) {
         </div>
         <textarea id="tr_${q.id}" placeholder="Type your transcription..."
           oninput="saveTranscribe('${q.id}', this.value)">${escapeHtml(state.answers.transcribe[q.id] || "")}</textarea>
+        <div class="hint-preview hidden" id="hint_tr_${q.id}"></div>
       </div>
     `).join("")}
     <div class="btn-row">
@@ -541,6 +614,8 @@ function renderTranscribe(card) {
       <button class="btn btn-primary" id="submitAssessmentBtn" onclick="submitAssessment()">Submit assessment</button>
     </div>
   `;
+  if (state.showTypingHints) showTypingHints("transcribe");
+  else hideTypingHints();
 }
 
 function escapeHtml(str) {
@@ -573,10 +648,19 @@ function renderSection(scrollToTop) {
   updateProgress();
   const card = document.getElementById("sectionCard");
   const key = SECTIONS[state.sectionIndex];
-  if (key === "learn") renderLearn(card);
-  else if (key === "mcqA") renderMcq(card, "mcqA", SECTION_LABELS.mcqA);
-  else if (key === "mcqB") renderMcqB(card);
-  else renderTranscribe(card);
+  if (key === "learn") {
+    setWorkspaceHintsMode(false);
+    hideTypingHints();
+    renderLearn(card);
+  } else if (key === "mcqA") {
+    setWorkspaceHintsMode(false);
+    hideTypingHints();
+    renderMcq(card, "mcqA", SECTION_LABELS.mcqA);
+  } else if (key === "mcqB") {
+    renderMcqB(card);
+  } else {
+    renderTranscribe(card);
+  }
   // Only scroll on Next/Back (or explicit true) — never on option re-render
   if (scrollToTop) {
     if (card && typeof card.scrollIntoView === "function") {
@@ -585,6 +669,99 @@ function renderSection(scrollToTop) {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
+}
+
+function setWorkspaceHintsMode(enabled) {
+  const workspace = document.getElementById("workspace");
+  if (!workspace) return;
+  workspace.classList.toggle("with-hints", !!enabled);
+}
+
+function remainingMissingCount(answer, gold) {
+  const aToks = tokenizeWords(answer);
+  const cToks = tokenizeWords(gold);
+  if (!cToks.length) return 0;
+  const { matchedC } = wordDiffMatches(aToks, cToks);
+  return matchedC.filter((m) => !m).length;
+}
+
+function evaluateTypingSection(key) {
+  const items = [];
+  let allCorrect = true;
+
+  if (key === "mcqB") {
+    for (const q of (ASSESSMENT_DATA.mcqB || [])) {
+      const answer = mcqBAnswerText(q);
+      const gold = q.correct || "";
+      const exact = normalizeText(answer) === normalizeText(gold);
+      if (!exact) allCorrect = false;
+      const diff = renderTypedDiff(answer, gold);
+      items.push({
+        id: q.id,
+        remaining: remainingMissingCount(answer, gold),
+        answerHtml: diff.answerHtml,
+        exact,
+        previewId: `hint_mcqb_${q.id}`
+      });
+    }
+  } else if (key === "transcribe") {
+    for (const q of (ASSESSMENT_DATA.transcribe || [])) {
+      const answer = state.answers.transcribe[q.id] || "";
+      const gold = q.gold || "";
+      const exact = normalizeText(answer) === normalizeText(gold);
+      if (!exact) allCorrect = false;
+      const diff = renderTypedDiff(answer, gold);
+      items.push({
+        id: q.id,
+        remaining: remainingMissingCount(answer, gold),
+        answerHtml: diff.answerHtml,
+        exact,
+        previewId: `hint_tr_${q.id}`
+      });
+    }
+  }
+
+  return { allCorrect, items };
+}
+
+function hideTypingHints() {
+  const sidebar = document.getElementById("hintSidebar");
+  if (sidebar) sidebar.classList.add("hidden");
+  document.querySelectorAll(".hint-preview").forEach((el) => {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+  });
+}
+
+function showTypingHints(key) {
+  const evalResult = evaluateTypingSection(key);
+  const sidebar = document.getElementById("hintSidebar");
+  const list = document.getElementById("hintSidebarList");
+  const totalEl = document.getElementById("hintSidebarTotal");
+  if (!sidebar || !list || !totalEl) return;
+
+  const totalRemaining = evalResult.items.reduce((s, x) => s + x.remaining, 0);
+  sidebar.classList.remove("hidden");
+  totalEl.className = "hint-sidebar-total" + (totalRemaining === 0 ? " done" : "");
+  totalEl.textContent = totalRemaining === 0
+    ? "All words matched"
+    : `${totalRemaining} word${totalRemaining === 1 ? "" : "s"} remaining`;
+
+  list.innerHTML = evalResult.items.map((item) => `
+    <div class="hint-clip-row">
+      <span>${escapeHtml(item.id)}</span>
+      <span class="remaining ${item.remaining === 0 ? "zero" : ""}">${item.remaining} remaining</span>
+    </div>
+  `).join("");
+
+  evalResult.items.forEach((item) => {
+    const preview = document.getElementById(item.previewId);
+    if (!preview) return;
+    preview.classList.remove("hidden");
+    preview.innerHTML =
+      '<div class="hint-preview-label">Hint (your answer)</div>' +
+      '<div class="hint-preview-body">' + item.answerHtml + "</div>";
+  });
 }
 
 function validateCurrentSection() {
@@ -599,23 +776,33 @@ function validateCurrentSection() {
     }
     return true;
   }
-  if (key === "mcqB") {
-    for (const q of ASSESSMENT_DATA.mcqB) {
-      const text = mcqBAnswerText(q);
-      if (!normalizeText(text)) {
-        showToast(`Please correct ${q.id}.`, "error");
-        return false;
+  if (key === "mcqB" || key === "transcribe") {
+    if (key === "mcqB") {
+      for (const q of ASSESSMENT_DATA.mcqB) {
+        if (!normalizeText(mcqBAnswerText(q))) {
+          showToast(`Please correct ${q.id}.`, "error");
+          return false;
+        }
+      }
+    } else {
+      for (const q of ASSESSMENT_DATA.transcribe) {
+        if (!normalizeText(state.answers.transcribe[q.id] || "")) {
+          showToast(`Please transcribe ${q.id}.`, "error");
+          return false;
+        }
       }
     }
-    return true;
-  }
-  if (key === "transcribe") {
-    for (const q of ASSESSMENT_DATA.transcribe) {
-      if (!normalizeText(state.answers.transcribe[q.id] || "")) {
-        showToast(`Please transcribe ${q.id}.`, "error");
-        return false;
-      }
+
+    const evalResult = evaluateTypingSection(key);
+    if (!evalResult.allCorrect) {
+      state.showTypingHints = true;
+      showTypingHints(key);
+      showToast("Fix the highlighted words before continuing.", "error");
+      return false;
     }
+
+    state.showTypingHints = false;
+    hideTypingHints();
     return true;
   }
   return true;
@@ -624,6 +811,7 @@ function validateCurrentSection() {
 function nextSection() {
   if (!validateCurrentSection()) return;
   if (state.sectionIndex < SECTIONS.length - 1) {
+    state.showTypingHints = false;
     state.sectionIndex++;
     saveSession();
     renderSection(true);
@@ -632,6 +820,7 @@ function nextSection() {
 
 function prevSection() {
   if (state.sectionIndex > 0) {
+    state.showTypingHints = false;
     state.sectionIndex--;
     saveSession();
     renderSection(true);
@@ -924,7 +1113,8 @@ async function startSession() {
     sectionIndex: 0,
     answers: { mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: new Date().toISOString(),
-    sessionStartTime: Date.now()
+    sessionStartTime: Date.now(),
+    showTypingHints: false
   };
   document.getElementById("headerName").textContent = user.name;
   document.getElementById("headerEmail").textContent = user.email;
@@ -949,7 +1139,8 @@ async function resumeSession(session) {
     sectionIndex: Math.min(session.sectionIndex || 0, SECTIONS.length - 1),
     answers: session.answers || { mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: session.startedAt || new Date().toISOString(),
-    sessionStartTime: session.sessionStartTime || Date.now()
+    sessionStartTime: session.sessionStartTime || Date.now(),
+    showTypingHints: false
   };
   document.getElementById("headerName").textContent = state.name;
   document.getElementById("headerEmail").textContent = state.email;
@@ -966,8 +1157,11 @@ function endSession(skipConfirm) {
   state = {
     name: "", email: "", sectionIndex: 0,
     answers: { mcqA: {}, mcqB: {}, transcribe: {} },
-    startedAt: null, sessionStartTime: null
+    startedAt: null, sessionStartTime: null,
+    showTypingHints: false
   };
+  hideTypingHints();
+  setWorkspaceHintsMode(false);
   document.getElementById("mainApp").classList.add("hidden");
   document.getElementById("resultsScreen").classList.add("hidden");
   document.getElementById("loginScreen").classList.remove("hidden");
