@@ -19,6 +19,7 @@ const ALLOWED_USERS = {
   "riyanagwani3032004@gmail.com": "Riyan Agwani",
   "yashtupkar6@gmail.com": "Yash Tupkar",
   "utkarshchurariya19@gmail.com": "Utkarsh Churariya",
+  "murtuza33@gmail.com": "Murtuza Ali",
 };
 
 function lookupAllowedUser(email) {
