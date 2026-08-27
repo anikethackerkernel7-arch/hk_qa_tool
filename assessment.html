@@ -336,7 +336,7 @@
 const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syftzSIkPvsKvOTiYO9VeUNSUg7LLDNOH6_4Le8T5X419Ayb8oSiLDli/exec";
 const SESSION_KEY = "argos_assessment_session";
 
-const SECTIONS = ["learn", "mcqA", "mcqB", "transcribe"];
+const SECTIONS_DEFAULT = ["learn", "mcqA", "mcqB", "transcribe"];
 const SECTION_LABELS = {
   learn: "Training material",
   mcqA: "Choose the correct option (2 choices)",
@@ -349,6 +349,9 @@ let state = {
   name: "",
   email: "",
   sectionIndex: 0,
+  sectionOrder: SECTIONS_DEFAULT.slice(),
+  itemOrders: { mcqA: [], mcqB: [], transcribe: [] },
+  optionOrders: { mcqA: {} },
   answers: { mcqA: {}, mcqB: {}, transcribe: {} },
   startedAt: null,
   sessionStartTime: null,
@@ -357,6 +360,97 @@ let state = {
 let activeAudio = null;
 let activeAudioPath = null;
 let playbackSpeed = 1;
+
+function shuffleCopy(arr) {
+  const a = Array.isArray(arr) ? arr.slice() : [];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i];
+    a[i] = a[j];
+    a[j] = tmp;
+  }
+  return a;
+}
+
+function buildSectionOrder() {
+  return ["learn"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
+}
+
+function buildItemOrders(data) {
+  const d = data || ASSESSMENT_DATA || {};
+  return {
+    mcqA: shuffleCopy((d.mcqA || []).map((q) => q.id)),
+    mcqB: shuffleCopy((d.mcqB || []).map((q) => q.id)),
+    transcribe: shuffleCopy((d.transcribe || []).map((q) => q.id))
+  };
+}
+
+function buildOptionOrders(data) {
+  const d = data || ASSESSMENT_DATA || {};
+  const mcqA = {};
+  (d.mcqA || []).forEach((q) => {
+    mcqA[q.id] = shuffleCopy(Object.keys(q.options || {}));
+  });
+  return { mcqA };
+}
+
+function ensureShuffleOrders() {
+  if (!ASSESSMENT_DATA) loadData();
+  let changed = false;
+  const validSections = Array.isArray(state.sectionOrder)
+    && state.sectionOrder[0] === "learn"
+    && state.sectionOrder.length === 4
+    && ["mcqA", "mcqB", "transcribe"].every((k) => state.sectionOrder.includes(k));
+  if (!validSections) {
+    state.sectionOrder = buildSectionOrder();
+    changed = true;
+  }
+  const needItems = !state.itemOrders
+    || !state.itemOrders.mcqA?.length
+    || !state.itemOrders.mcqB?.length
+    || !state.itemOrders.transcribe?.length;
+  if (needItems) {
+    state.itemOrders = buildItemOrders(ASSESSMENT_DATA);
+    changed = true;
+  }
+  if (!state.optionOrders || !state.optionOrders.mcqA
+    || !Object.keys(state.optionOrders.mcqA).length) {
+    state.optionOrders = buildOptionOrders(ASSESSMENT_DATA);
+    changed = true;
+  }
+  if (changed && state.email) {
+    saveSession();
+  }
+}
+
+function getSectionOrder() {
+  ensureShuffleOrders();
+  return state.sectionOrder;
+}
+
+function getOrderedQuestions(sectionKey) {
+  ensureShuffleOrders();
+  const all = ASSESSMENT_DATA[sectionKey] || [];
+  const byId = {};
+  all.forEach((q) => { byId[q.id] = q; });
+  const ids = state.itemOrders[sectionKey] || all.map((q) => q.id);
+  const ordered = ids.map((id) => byId[id]).filter(Boolean);
+  // Append any new ids not in saved order
+  all.forEach((q) => {
+    if (!ids.includes(q.id)) ordered.push(q);
+  });
+  return ordered;
+}
+
+function getMcqOptionKeys(q) {
+  ensureShuffleOrders();
+  const saved = state.optionOrders?.mcqA?.[q.id];
+  if (Array.isArray(saved) && saved.length) {
+    const valid = saved.filter((k) => q.options && q.options[k] != null);
+    if (valid.length) return valid;
+  }
+  return Object.keys(q.options || {});
+}
 
 function speedSelectHtml() {
   const opts = [
@@ -402,6 +496,9 @@ function saveSession() {
     name: state.name,
     email: state.email,
     sectionIndex: state.sectionIndex,
+    sectionOrder: state.sectionOrder,
+    itemOrders: state.itemOrders,
+    optionOrders: state.optionOrders,
     answers: state.answers,
     startedAt: state.startedAt,
     sessionStartTime: state.sessionStartTime
@@ -518,7 +615,8 @@ function playFile(path) {
 }
 
 function updateProgress() {
-  const total = SECTIONS.length;
+  const sections = getSectionOrder();
+  const total = sections.length;
   const current = state.sectionIndex + 1;
   document.getElementById("progressFill").style.width = ((state.sectionIndex / total) * 100) + "%";
   document.getElementById("progressCount").textContent = `${current} / ${total}`;
@@ -547,14 +645,14 @@ function renderLearn(card) {
 }
 
 function renderMcq(card, key, title) {
-  const items = ASSESSMENT_DATA[key];
+  const items = getOrderedQuestions(key);
   const answers = state.answers[key];
   card.innerHTML = `
     <div class="card-title">${title}</div>
     <div class="intro-box">Listen to each clip and choose the best matching transcript.</div>
     ${items.map((q, qi) => {
       const selected = answers[q.id] || "";
-      const keys = Object.keys(q.options || {});
+      const keys = key === "mcqA" ? getMcqOptionKeys(q) : Object.keys(q.options || {});
       return `
         <div class="question-block">
           <h4>Question ${qi + 1}: ${q.id}</h4>
@@ -564,12 +662,12 @@ function renderMcq(card, key, title) {
             ${speedSelectHtml()}
           </div>
           <div class="option-list">
-            ${keys.map(k => `
+            ${keys.map((k, oi) => `
               <label class="option-item ${selected === k ? "selected" : ""}">
                 <input type="radio" name="${key}_${q.id}" value="${k}" ${selected === k ? "checked" : ""}
                   onchange="selectMcq('${key}','${q.id}','${k}')" />
                 <div>
-                  <strong>Option ${k}</strong>
+                  <strong>Option ${oi + 1}</strong>
                   <div class="option-text">${escapeHtml(q.options[k])}</div>
                 </div>
               </label>
@@ -613,7 +711,7 @@ function ensureMcqBAnswersSeeded() {
 function renderMcqB(card) {
   ensureMcqBAnswersSeeded();
   setWorkspaceHintsMode(true);
-  const items = ASSESSMENT_DATA.mcqB || [];
+  const items = getOrderedQuestions("mcqB");
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.mcqB}</div>
     <div class="intro-box">Listen to each clip and edit the given transcript so it matches what is spoken. Click Next to check — you can continue only when every clip is correct.</div>
@@ -641,7 +739,7 @@ function renderMcqB(card) {
 
 function renderTranscribe(card) {
   setWorkspaceHintsMode(true);
-  const items = ASSESSMENT_DATA.transcribe;
+  const items = getOrderedQuestions("transcribe");
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.transcribe}</div>
     <div class="intro-box">Listen carefully and type exactly what you hear (spoken style — tags, fillers, stutters as spoken). Click Submit to check — you can finish only when every clip is correct.</div>
@@ -694,9 +792,11 @@ function saveMcqB(clipId, value) {
 
 function renderSection(scrollToTop) {
   stopAudio();
+  ensureShuffleOrders();
   updateProgress();
   const card = document.getElementById("sectionCard");
-  const key = SECTIONS[state.sectionIndex];
+  const sections = getSectionOrder();
+  const key = sections[state.sectionIndex] || sections[0];
   if (key === "learn") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
@@ -814,7 +914,7 @@ function showTypingHints(key) {
 }
 
 function validateCurrentSection() {
-  const key = SECTIONS[state.sectionIndex];
+  const key = getSectionOrder()[state.sectionIndex];
   if (key === "learn") return true;
   if (key === "mcqA") {
     for (const q of ASSESSMENT_DATA.mcqA) {
@@ -859,7 +959,8 @@ function validateCurrentSection() {
 
 function nextSection() {
   if (!validateCurrentSection()) return;
-  if (state.sectionIndex < SECTIONS.length - 1) {
+  const sections = getSectionOrder();
+  if (state.sectionIndex < sections.length - 1) {
     state.showTypingHints = false;
     state.sectionIndex++;
     saveSession();
@@ -1160,6 +1261,9 @@ async function startSession() {
     name: user.name,
     email: user.email,
     sectionIndex: 0,
+    sectionOrder: buildSectionOrder(),
+    itemOrders: buildItemOrders(ASSESSMENT_DATA),
+    optionOrders: buildOptionOrders(ASSESSMENT_DATA),
     answers: { mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: new Date().toISOString(),
     sessionStartTime: Date.now(),
@@ -1185,12 +1289,21 @@ async function resumeSession(session) {
   state = {
     name: user.name,
     email: user.email,
-    sectionIndex: Math.min(session.sectionIndex || 0, SECTIONS.length - 1),
+    sectionIndex: session.sectionIndex || 0,
+    sectionOrder: session.sectionOrder || null,
+    itemOrders: session.itemOrders || null,
+    optionOrders: session.optionOrders || null,
     answers: session.answers || { mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: session.startedAt || new Date().toISOString(),
     sessionStartTime: session.sessionStartTime || Date.now(),
     showTypingHints: false
   };
+  ensureShuffleOrders();
+  state.sectionIndex = Math.min(
+    Math.max(0, state.sectionIndex || 0),
+    getSectionOrder().length - 1
+  );
+  saveSession();
   document.getElementById("headerName").textContent = state.name;
   document.getElementById("headerEmail").textContent = state.email;
   document.getElementById("loginScreen").classList.add("hidden");
@@ -1205,6 +1318,9 @@ function endSession(skipConfirm) {
   clearSession();
   state = {
     name: "", email: "", sectionIndex: 0,
+    sectionOrder: SECTIONS_DEFAULT.slice(),
+    itemOrders: { mcqA: [], mcqB: [], transcribe: [] },
+    optionOrders: { mcqA: {} },
     answers: { mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: null, sessionStartTime: null,
     showTypingHints: false
