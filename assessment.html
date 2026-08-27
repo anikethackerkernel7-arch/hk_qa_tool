@@ -183,6 +183,17 @@
     width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
     background: var(--primary); color: white; cursor: pointer; display: grid; place-items: center;
   }
+  .speed-select {
+    flex-shrink: 0;
+    width: auto;
+    min-width: 72px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+    font-size: 13px;
+    cursor: pointer;
+  }
   .option-list { display: grid; gap: 8px; margin-top: 10px; }
   .option-item {
     display: flex; gap: 10px; align-items: flex-start;
@@ -345,6 +356,38 @@ let state = {
 };
 let activeAudio = null;
 let activeAudioPath = null;
+let playbackSpeed = 1;
+
+function speedSelectHtml() {
+  const opts = [
+    { v: "0.75", label: "0.75x" },
+    { v: "1", label: "1.0x" },
+    { v: "1.25", label: "1.25x" },
+    { v: "1.5", label: "1.5x" }
+  ];
+  const current = String(playbackSpeed);
+  return `<select class="speed-select" onchange="setSpeed(this.value)" title="Playback speed">${
+    opts.map((o) =>
+      `<option value="${o.v}" ${current === o.v ? "selected" : ""}>${o.label}</option>`
+    ).join("")
+  }</select>`;
+}
+
+function syncSpeedSelects() {
+  document.querySelectorAll(".speed-select").forEach((el) => {
+    el.value = String(playbackSpeed);
+  });
+}
+
+function setSpeed(v) {
+  const rate = parseFloat(v);
+  if (!Number.isFinite(rate) || rate <= 0) return;
+  playbackSpeed = rate;
+  if (activeAudio) {
+    try { activeAudio.playbackRate = playbackSpeed; } catch (_) {}
+  }
+  syncSpeedSelects();
+}
 
 function showToast(msg, type) {
   const t = document.getElementById("toast");
@@ -454,6 +497,7 @@ function playFile(path) {
       updatePlayButtons(null);
       return;
     }
+    try { activeAudio.playbackRate = playbackSpeed; } catch (_) {}
     activeAudio.play().catch(() => showToast("Could not play audio.", "error"));
     updatePlayButtons(path);
     return;
@@ -465,6 +509,7 @@ function playFile(path) {
   }
   activeAudio = new Audio(path);
   activeAudioPath = path;
+  try { activeAudio.playbackRate = playbackSpeed; } catch (_) {}
   activeAudio.addEventListener("ended", () => {
     updatePlayButtons(null);
   });
@@ -490,6 +535,7 @@ function renderLearn(card) {
         <div class="audio-row">
           <button type="button" class="icon-btn" data-audio="${s.file}" onclick="playFile('${s.file}')" title="Play">▶</button>
           <span style="font-size:12px;color:var(--text-muted);">${s.file.split("/").pop()}</span>
+          ${speedSelectHtml()}
         </div>
         <div class="sample-text">${escapeHtml(s.text)}</div>
       </div>
@@ -515,6 +561,7 @@ function renderMcq(card, key, title) {
           <div class="audio-row">
             <button type="button" class="icon-btn" data-audio="${q.file}" onclick="playFile('${q.file}')" title="Play">▶</button>
             <span style="font-size:12px;color:var(--text-muted);">${q.file.split("/").pop()}</span>
+            ${speedSelectHtml()}
           </div>
           <div class="option-list">
             ${keys.map(k => `
@@ -576,6 +623,7 @@ function renderMcqB(card) {
         <div class="audio-row">
           <button type="button" class="icon-btn" data-audio="${q.file}" onclick="playFile('${q.file}')" title="Play">▶</button>
           <span style="font-size:12px;color:var(--text-muted);">${q.file.split("/").pop()}</span>
+          ${speedSelectHtml()}
         </div>
         <textarea id="mcqb_${q.id}" placeholder="Edit the transcription..."
           oninput="saveMcqB('${q.id}', this.value)">${escapeHtml(mcqBAnswerText(q))}</textarea>
@@ -603,6 +651,7 @@ function renderTranscribe(card) {
         <div class="audio-row">
           <button type="button" class="icon-btn" data-audio="${q.file}" onclick="playFile('${q.file}')" title="Play">▶</button>
           <span style="font-size:12px;color:var(--text-muted);">${q.file.split("/").pop()}</span>
+          ${speedSelectHtml()}
         </div>
         <textarea id="tr_${q.id}" placeholder="Type your transcription..."
           oninput="saveTranscribe('${q.id}', this.value)">${escapeHtml(state.answers.transcribe[q.id] || "")}</textarea>
