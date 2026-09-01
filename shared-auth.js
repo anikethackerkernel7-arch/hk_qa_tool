@@ -1,4 +1,4 @@
-// Shared allowlist for Argos practice + assessment pages.
+x// Shared allowlist for Argos practice + assessment pages.
 const ALLOWED_USERS = {
   "dishikamore205@gmail.com": "Dishika More",
   "fatimagoshiya5@gmail.com": "Goshiya Fatima",
@@ -22,6 +22,12 @@ const ALLOWED_USERS = {
   "murtuza33@gmail.com": "Murtuza Ali",
   "jiyavishwakarma5582@gmail.com": "Jiya Vishwakarma",
   "azizsaniyaa@gmail.com": "Aziz Saniya",
+  "ybhadauriya40@gmail.com": "Yogesh Bhadauriya",
+  "alisayedumar45@gmail.com": "Umar Ali",
+  "uk765292@gmail.com": "Usman",
+  "zzzaidkhan02@gmail.com": "Zaid",
+  "saeedurrehman786100@gmai.com": "Saeed",
+  "shayanskhan00@gmail.com": "Shayan",
 };
 
 function lookupAllowedUser(email) {
