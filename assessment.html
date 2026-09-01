@@ -1286,6 +1286,13 @@ async function resumeSession(session) {
     return;
   }
   const user = lookupAllowedUser(session.email);
+  if (!user) {
+    clearSession();
+    showToast("This email is not registered for training. Contact your trainer.", "error");
+    document.getElementById("loginScreen").classList.remove("hidden");
+    document.getElementById("mainApp").classList.add("hidden");
+    return;
+  }
   state = {
     name: user.name,
     email: user.email,

@@ -1,4 +1,4 @@
-x// Shared allowlist for Argos practice + assessment pages.
+// Shared allowlist for Argos practice + assessment pages.
 const ALLOWED_USERS = {
   "dishikamore205@gmail.com": "Dishika More",
   "fatimagoshiya5@gmail.com": "Goshiya Fatima",
