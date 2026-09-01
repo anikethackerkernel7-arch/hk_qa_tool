@@ -14,6 +14,7 @@ training-tool/
 │   ├── clip_02.wav     ← Your sample (Clear_Intelligible)
 │   └── clip_03.m4a     ← Your sample (Gandhi_Nagar)
 ├── apps-script.gs      ← Server code for Google Sheets
+├── admin.html          ← User admin panel (manage trainee access)
 └── SETUP.md            ← This file
 ```
 
@@ -114,3 +115,34 @@ Confirm the file path in `AUDIO_QUEUE` matches the actual filename in `/audio` (
 
 **"Skipped" rows are showing up unexpectedly.**
 The skip button intentionally logs a row so trainers can see when a trainee bailed. Remove the button (see above) if you don't want this.
+
+---
+
+## User management (admin panel)
+
+Trainee access is stored in a **`Users`** tab in the same Google Sheet, managed via `admin.html` — no code deploy needed to add/remove users after setup.
+
+### One-time setup
+
+1. **Update Apps Script** — paste the latest `apps-script.gs` into your sheet's Apps Script project and save.
+2. **Set Script Properties** (Apps Script → Project Settings → Script Properties):
+   - `ADMIN_EMAIL` = your admin email (e.g. `hackerkernel82@gmail.com`)
+   - `ADMIN_PASSWORD` = your admin password (never commit this to git)
+3. **Seed users** — in the Apps Script editor, select `seedUsersIfEmpty` from the function dropdown and click **Run** once. This creates the `Users` tab and copies the default trainee list if the sheet is empty.
+4. **Redeploy** — Deploy → Manage deployments → edit → New version → Deploy (keep the same Web App URL).
+5. **Open admin** — go to `/admin.html` on your hosted site, sign in, and manage users.
+
+### Users sheet columns
+
+| Email | Name | Enabled |
+|-------|------|---------|
+| trainee@example.com | Full Name | TRUE |
+
+- **Enabled = FALSE** blocks login without deleting the row.
+- **Remove** in admin permanently deletes the row.
+
+### Trainee login
+
+Practice (`index.html`) and assessment (`assessment.html`) verify email access via Apps Script (`?action=check_user`). If the API is unreachable, login is blocked.
+
+**Do not link `admin.html` from trainee pages** — keep the admin URL private.

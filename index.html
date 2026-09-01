@@ -782,6 +782,7 @@
 // Paste your deployed Google Apps Script Web App URL here.
 // See SETUP.md for step-by-step instructions.
 const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syftzSIkPvsKvOTiYO9VeUNSUg7LLDNOH6_4Le8T5X419Ayb8oSiLDli/exec";
+window.SHEETS_ENDPOINT = SHEETS_ENDPOINT;
 
 // The audio queue. Add/remove entries to change what trainees practice on.
 // Each entry: { id, file, workitem, locale }
@@ -881,13 +882,13 @@ function saveSession() {
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
 
-function loadSession() {
+async function loadSession() {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const session = JSON.parse(raw);
     if (!session.email || typeof session.currentIndex !== "number") return null;
-    const user = lookupAllowedUser(session.email);
+    const user = await lookupAllowedUser(session.email);
     if (!user) {
       clearSession();
       return null;
@@ -918,9 +919,9 @@ async function startSession() {
     showToast("Please enter a valid email address.", "error");
     return;
   }
-  const user = lookupAllowedUser(email);
+  const user = await lookupAllowedUser(email);
   if (!user) {
-    showToast("This email is not registered for training. Contact your trainer.", "error");
+    showToast(getLastAuthMessage(), "error");
     return;
   }
   try {
@@ -1357,7 +1358,7 @@ function showToast(msg, type = "") {
 
 /* Focus email input on load; resume saved session if present */
 (async function initApp() {
-  const session = loadSession();
+  const session = await loadSession();
   if (session) {
     await resumeSession(session);
     return;

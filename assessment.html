@@ -334,6 +334,7 @@
 <script src="assessment-data.js"></script>
 <script>
 const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syftzSIkPvsKvOTiYO9VeUNSUg7LLDNOH6_4Le8T5X419Ayb8oSiLDli/exec";
+window.SHEETS_ENDPOINT = SHEETS_ENDPOINT;
 const SESSION_KEY = "argos_assessment_session";
 
 const SECTIONS_DEFAULT = ["learn", "mcqA", "mcqB", "transcribe"];
@@ -505,12 +506,17 @@ function saveSession() {
   }));
 }
 
-function loadSession() {
+async function loadSession() {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw);
-    if (!s.email || !lookupAllowedUser(s.email)) {
+    if (!s.email) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    const user = await lookupAllowedUser(s.email);
+    if (!user) {
       localStorage.removeItem(SESSION_KEY);
       return null;
     }
@@ -1245,9 +1251,9 @@ async function startSession() {
     showToast("Please enter a valid email address.", "error");
     return;
   }
-  const user = lookupAllowedUser(email);
+  const user = await lookupAllowedUser(email);
   if (!user) {
-    showToast("This email is not registered for training. Contact your trainer.", "error");
+    showToast(getLastAuthMessage(), "error");
     return;
   }
   try {
@@ -1285,10 +1291,10 @@ async function resumeSession(session) {
     showToast("Could not load assessment data.", "error");
     return;
   }
-  const user = lookupAllowedUser(session.email);
+  const user = await lookupAllowedUser(session.email);
   if (!user) {
     clearSession();
-    showToast("This email is not registered for training. Contact your trainer.", "error");
+    showToast(getLastAuthMessage(), "error");
     document.getElementById("loginScreen").classList.remove("hidden");
     document.getElementById("mainApp").classList.add("hidden");
     return;
@@ -1342,7 +1348,7 @@ function endSession(skipConfirm) {
 }
 
 (async function init() {
-  const session = loadSession();
+  const session = await loadSession();
   if (session) {
     await resumeSession(session);
     return;

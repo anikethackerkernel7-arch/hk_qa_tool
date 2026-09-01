@@ -1,7 +1,7 @@
 /**
  * Argos Training — Google Sheets receiver (v9)
  *
- * New in v9 (additive):
+ * New in v14 (additive):
  *  - Assessment submissions (data.type === "assessment") append to shared
  *    "Assessment" sheet. Existing per-user practice path is unchanged.
  *
@@ -65,6 +65,11 @@ function doPost(e) {
   try {
     const data = JSON.parse(e.postData.contents);
 
+    // User admin API (sheet-backed allowlist)
+    if (data.action) {
+      return handleUserAdminPost(data);
+    }
+
     // Assessment flow — shared sheet, append-only (does not touch per-user sheets)
     if (data.type === "assessment") {
       return handleAssessmentPost(data);
@@ -104,10 +109,25 @@ function doPost(e) {
   }
 }
 
-function doGet() {
-  return ContentService
-    .createTextOutput("Argos Training endpoint is live.")
-    .setMimeType(ContentService.MimeType.TEXT);
+function doGet(e) {
+  try {
+    const params = (e && e.parameter) ? e.parameter : {};
+    const action = String(params.action || "").trim();
+
+    if (action === "check_user") {
+      return jsonResponse(handleCheckUser(params.email));
+    }
+
+    if (action === "admin_users") {
+      return jsonResponse(handleAdminListUsers(params.token));
+    }
+
+    return ContentService
+      .createTextOutput("Argos Training endpoint is live.")
+      .setMimeType(ContentService.MimeType.TEXT);
+  } catch (err) {
+    return jsonResponse({ ok: false, message: "Unable to process the request." });
+  }
 }
 
 /* ---------------- Idempotency ---------------- */
@@ -445,5 +465,318 @@ function buildAssessmentRow(data) {
     data.sessionElapsedSec != null ? data.sessionElapsedSec : "",
     data.submittedAt || ""
   ];
+}
+
+/* =========================================================
+   USERS (sheet-backed allowlist + admin CRUD)
+   ========================================================= */
+
+const USERS_SHEET_NAME = "Users";
+const ADMIN_TOKEN_TTL_SEC = 7200; // 2 hours
+
+const DEFAULT_USERS = [
+  ["dishikamore205@gmail.com", "Dishika More", true],
+  ["fatimagoshiya5@gmail.com", "Goshiya Fatima", true],
+  ["dubeyrishika53@gmail.com", "Rishika Dubey", true],
+  ["kaharashish657@gmail.com", "Ashish Kahar", true],
+  ["ramji@gmail.com", "Amrendra Pratap Singh", true],
+  ["murtuza21@gmail.com", "Murtaza Ali", true],
+  ["jaknoreshubham@gmail.com", "Shubham Jaknore", true],
+  ["abhaysinghhrr744@gmail.com", "Abhay Rathore", true],
+  ["poojaverma462023@gmail.com", "Pooja Verma", true],
+  ["raiaman9122@gmail.com", "Aman Rai", true],
+  ["syedrayyansajid@gmail.com", "Syed Rayyan Sajid", true],
+  ["adnan119786@gmail.com", "Mohannad Adnan", true],
+  ["garimamukati81@gmail.com", "Garima Mukati", true],
+  ["khantahoor568@gmail.com", "Tahur Khan", true],
+  ["vaishnavisharma11505@gmail.com", "Vaishnavi Sharma", true],
+  ["mahakvishwakarma848@gmail.com", "Mahak Vishwakarma", true],
+  ["riyanagwani3032004@gmail.com", "Riyan Agwani", true],
+  ["yashtupkar6@gmail.com", "Yash Tupkar", true],
+  ["utkarshchurariya19@gmail.com", "Utkarsh Churariya", true],
+  ["murtuza33@gmail.com", "Murtuza Ali", true],
+  ["jiyavishwakarma5582@gmail.com", "Jiya Vishwakarma", true],
+  ["azizsaniyaa@gmail.com", "Aziz Saniya", true],
+  ["ybhadauriya40@gmail.com", "Yogesh Bhadauriya", true],
+  ["alisayedumar45@gmail.com", "Umar Ali", true],
+  ["uk765292@gmail.com", "Usman", true],
+  ["zzzaidkhan02@gmail.com", "Zaid", true],
+  ["saeedurrehman786100@gmai.com", "Saeed", true],
+  ["shayanskhan00@gmail.com", "Shayan", true]
+];
+
+function jsonResponse(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function normalizeEmail(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function parseEnabled(value) {
+  if (value === true || value === 1) return true;
+  const s = String(value || "").trim().toLowerCase();
+  return s === "true" || s === "yes" || s === "1";
+}
+
+function getOrCreateUsersSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(USERS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(USERS_SHEET_NAME);
+  }
+  ensureUsersHeaders(sheet);
+  return sheet;
+}
+
+function ensureUsersHeaders(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(["Email", "Name", "Enabled"]);
+    sheet.getRange(1, 1, 1, 3).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    return;
+  }
+  const headers = sheet.getRange(1, 1, 1, 3).getValues()[0];
+  const expected = ["Email", "Name", "Enabled"];
+  expected.forEach((header, i) => {
+    if (headers[i] !== header) {
+      sheet.getRange(1, i + 1).setValue(header).setFontWeight("bold");
+    }
+  });
+  sheet.setFrozenRows(1);
+}
+
+/**
+ * Run once from the Apps Script editor to populate Users if empty.
+ */
+function seedUsersIfEmpty() {
+  const sheet = getOrCreateUsersSheet();
+  if (sheet.getLastRow() > 1) {
+    return { ok: true, seeded: false, message: "Users sheet already has data." };
+  }
+  const rows = DEFAULT_USERS.map((row) => [row[0], row[1], row[2]]);
+  if (rows.length) {
+    sheet.getRange(2, 1, rows.length, 3).setValues(rows);
+  }
+  return { ok: true, seeded: true, count: rows.length };
+}
+
+function readAllUsers() {
+  seedUsersIfEmpty();
+  const sheet = getOrCreateUsersSheet();
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const values = sheet.getRange(2, 1, lastRow, 3).getValues();
+  return values
+    .map((row) => ({
+      email: normalizeEmail(row[0]),
+      name: String(row[1] || "").trim(),
+      enabled: parseEnabled(row[2])
+    }))
+    .filter((u) => u.email);
+}
+
+function findUserRow(sheet, email) {
+  const key = normalizeEmail(email);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2 || !key) return -1;
+
+  const values = sheet.getRange(2, 1, lastRow, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (normalizeEmail(values[i][0]) === key) {
+      return i + 2; // 1-based sheet row
+    }
+  }
+  return -1;
+}
+
+function handleCheckUser(email) {
+  try {
+    const key = normalizeEmail(email);
+    if (!key || !isValidEmail(key)) {
+      return { ok: true, allowed: false, name: "" };
+    }
+
+    const users = readAllUsers();
+    const user = users.find((u) => u.email === key);
+    if (!user) {
+      return { ok: true, allowed: false, name: "" };
+    }
+    if (!user.enabled) {
+      return { ok: true, allowed: false, name: user.name, disabled: true };
+    }
+    return { ok: true, allowed: true, name: user.name };
+  } catch (err) {
+    Logger.log("handleCheckUser failed: " + err);
+    return { ok: false, message: "Unable to verify user access." };
+  }
+}
+
+function getAdminCredentials_() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    email: normalizeEmail(props.getProperty("ADMIN_EMAIL")),
+    password: String(props.getProperty("ADMIN_PASSWORD") || "")
+  };
+}
+
+function createAdminToken_() {
+  const token = Utilities.getUuid() + Utilities.getUuid();
+  const cache = CacheService.getScriptCache();
+  cache.put("admin_" + token, "1", ADMIN_TOKEN_TTL_SEC);
+  return { token: token, expiresIn: ADMIN_TOKEN_TTL_SEC };
+}
+
+function validateAdminToken_(token) {
+  if (!token) return false;
+  const cache = CacheService.getScriptCache();
+  return cache.get("admin_" + String(token).trim()) === "1";
+}
+
+function requireAdminToken_(token) {
+  if (!validateAdminToken_(token)) {
+    throw new Error("Unauthorized");
+  }
+}
+
+function handleAdminLogin(data) {
+  const creds = getAdminCredentials_();
+  const email = normalizeEmail(data.email);
+  const password = String(data.password || "");
+
+  if (!creds.email || !creds.password) {
+    return { ok: false, message: "Admin credentials are not configured." };
+  }
+  if (email !== creds.email || password !== creds.password) {
+    return { ok: false, message: "Invalid email or password." };
+  }
+
+  const session = createAdminToken_();
+  return { ok: true, token: session.token, expiresIn: session.expiresIn };
+}
+
+function handleAdminListUsers(token) {
+  try {
+    requireAdminToken_(token);
+    const users = readAllUsers().map((u) => ({
+      email: u.email,
+      name: u.name,
+      enabled: u.enabled
+    }));
+    return { ok: true, users: users };
+  } catch (err) {
+    return { ok: false, message: "Unauthorized." };
+  }
+}
+
+function handleAdminAddUser(data) {
+  try {
+    requireAdminToken_(data.token);
+
+    const email = normalizeEmail(data.email);
+    const name = String(data.name || "").trim();
+    const enabled = data.enabled !== false;
+
+    if (!email || !isValidEmail(email)) {
+      return { ok: false, message: "Please enter a valid email address." };
+    }
+    if (!name) {
+      return { ok: false, message: "Name is required." };
+    }
+
+    const sheet = getOrCreateUsersSheet();
+    if (findUserRow(sheet, email) !== -1) {
+      return { ok: false, message: "This email is already registered." };
+    }
+
+    sheet.appendRow([email, name, enabled]);
+    return { ok: true };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminAddUser failed: " + err);
+    return { ok: false, message: "Unable to add user." };
+  }
+}
+
+function handleAdminRemoveUser(data) {
+  try {
+    requireAdminToken_(data.token);
+
+    const email = normalizeEmail(data.email);
+    if (!email || !isValidEmail(email)) {
+      return { ok: false, message: "Please enter a valid email address." };
+    }
+
+    const sheet = getOrCreateUsersSheet();
+    const row = findUserRow(sheet, email);
+    if (row === -1) {
+      return { ok: false, message: "User not found." };
+    }
+
+    sheet.deleteRow(row);
+    return { ok: true };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminRemoveUser failed: " + err);
+    return { ok: false, message: "Unable to remove user." };
+  }
+}
+
+function handleAdminToggleUser(data) {
+  try {
+    requireAdminToken_(data.token);
+
+    const email = normalizeEmail(data.email);
+    const enabled = !!data.enabled;
+
+    if (!email || !isValidEmail(email)) {
+      return { ok: false, message: "Please enter a valid email address." };
+    }
+
+    const sheet = getOrCreateUsersSheet();
+    const row = findUserRow(sheet, email);
+    if (row === -1) {
+      return { ok: false, message: "User not found." };
+    }
+
+    sheet.getRange(row, 3).setValue(enabled);
+    return { ok: true };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminToggleUser failed: " + err);
+    return { ok: false, message: "Unable to update user." };
+  }
+}
+
+function handleUserAdminPost(data) {
+  const action = String(data.action || "").trim();
+
+  if (action === "admin_login") {
+    return jsonResponse(handleAdminLogin(data));
+  }
+  if (action === "admin_add_user") {
+    return jsonResponse(handleAdminAddUser(data));
+  }
+  if (action === "admin_remove_user") {
+    return jsonResponse(handleAdminRemoveUser(data));
+  }
+  if (action === "admin_toggle_user") {
+    return jsonResponse(handleAdminToggleUser(data));
+  }
+
+  return jsonResponse({ ok: false, message: "Unknown action." });
 }
 
