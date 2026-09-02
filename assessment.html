@@ -337,9 +337,10 @@ const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syft
 window.SHEETS_ENDPOINT = SHEETS_ENDPOINT;
 const SESSION_KEY = "argos_assessment_session";
 
-const SECTIONS_DEFAULT = ["learn", "mcqA", "mcqB", "transcribe"];
+const SECTIONS_DEFAULT = ["learn", "guidelinesMcq", "mcqA", "mcqB", "transcribe"];
 const SECTION_LABELS = {
   learn: "Training material",
+  guidelinesMcq: "Guidelines comprehension",
   mcqA: "Choose the correct option (2 choices)",
   mcqB: "Correct the given transcription:",
   transcribe: "Transcribe the audios"
@@ -351,9 +352,9 @@ let state = {
   email: "",
   sectionIndex: 0,
   sectionOrder: SECTIONS_DEFAULT.slice(),
-  itemOrders: { mcqA: [], mcqB: [], transcribe: [] },
-  optionOrders: { mcqA: {} },
-  answers: { mcqA: {}, mcqB: {}, transcribe: {} },
+  itemOrders: { guidelinesMcq: [], mcqA: [], mcqB: [], transcribe: [] },
+  optionOrders: { guidelinesMcq: {}, mcqA: {} },
+  answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
   startedAt: null,
   sessionStartTime: null,
   showTypingHints: false
@@ -374,12 +375,13 @@ function shuffleCopy(arr) {
 }
 
 function buildSectionOrder() {
-  return ["learn"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
+  return ["learn", "guidelinesMcq"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
 }
 
 function buildItemOrders(data) {
   const d = data || ASSESSMENT_DATA || {};
   return {
+    guidelinesMcq: shuffleCopy((d.guidelinesMcq || []).map((q) => q.id)),
     mcqA: shuffleCopy((d.mcqA || []).map((q) => q.id)),
     mcqB: shuffleCopy((d.mcqB || []).map((q) => q.id)),
     transcribe: shuffleCopy((d.transcribe || []).map((q) => q.id))
@@ -388,11 +390,15 @@ function buildItemOrders(data) {
 
 function buildOptionOrders(data) {
   const d = data || ASSESSMENT_DATA || {};
+  const guidelinesMcq = {};
   const mcqA = {};
+  (d.guidelinesMcq || []).forEach((q) => {
+    guidelinesMcq[q.id] = shuffleCopy(Object.keys(q.options || {}));
+  });
   (d.mcqA || []).forEach((q) => {
     mcqA[q.id] = shuffleCopy(Object.keys(q.options || {}));
   });
-  return { mcqA };
+  return { guidelinesMcq, mcqA };
 }
 
 function ensureShuffleOrders() {
@@ -400,13 +406,15 @@ function ensureShuffleOrders() {
   let changed = false;
   const validSections = Array.isArray(state.sectionOrder)
     && state.sectionOrder[0] === "learn"
-    && state.sectionOrder.length === 4
+    && state.sectionOrder[1] === "guidelinesMcq"
+    && state.sectionOrder.length === 5
     && ["mcqA", "mcqB", "transcribe"].every((k) => state.sectionOrder.includes(k));
   if (!validSections) {
     state.sectionOrder = buildSectionOrder();
     changed = true;
   }
   const needItems = !state.itemOrders
+    || !state.itemOrders.guidelinesMcq?.length
     || !state.itemOrders.mcqA?.length
     || !state.itemOrders.mcqB?.length
     || !state.itemOrders.transcribe?.length;
@@ -414,8 +422,11 @@ function ensureShuffleOrders() {
     state.itemOrders = buildItemOrders(ASSESSMENT_DATA);
     changed = true;
   }
-  if (!state.optionOrders || !state.optionOrders.mcqA
-    || !Object.keys(state.optionOrders.mcqA).length) {
+  const needGuidelinesOptions = !state.optionOrders || !state.optionOrders.guidelinesMcq
+    || !Object.keys(state.optionOrders.guidelinesMcq).length;
+  const needMcqAOptions = !state.optionOrders || !state.optionOrders.mcqA
+    || !Object.keys(state.optionOrders.mcqA).length;
+  if (needGuidelinesOptions || needMcqAOptions) {
     state.optionOrders = buildOptionOrders(ASSESSMENT_DATA);
     changed = true;
   }
@@ -443,9 +454,10 @@ function getOrderedQuestions(sectionKey) {
   return ordered;
 }
 
-function getMcqOptionKeys(q) {
+function getMcqOptionKeys(q, sectionKey) {
   ensureShuffleOrders();
-  const saved = state.optionOrders?.mcqA?.[q.id];
+  const key = sectionKey || "mcqA";
+  const saved = state.optionOrders?.[key]?.[q.id];
   if (Array.isArray(saved) && saved.length) {
     const valid = saved.filter((k) => q.options && q.options[k] != null);
     if (valid.length) return valid;
@@ -658,7 +670,7 @@ function renderMcq(card, key, title) {
     <div class="intro-box">Listen to each clip and choose the best matching transcript.</div>
     ${items.map((q, qi) => {
       const selected = answers[q.id] || "";
-      const keys = key === "mcqA" ? getMcqOptionKeys(q) : Object.keys(q.options || {});
+      const keys = getMcqOptionKeys(q, key);
       return `
         <div class="question-block">
           <h4>Question ${qi + 1}: ${q.id}</h4>
@@ -672,6 +684,47 @@ function renderMcq(card, key, title) {
               <label class="option-item ${selected === k ? "selected" : ""}">
                 <input type="radio" name="${key}_${q.id}" value="${k}" ${selected === k ? "checked" : ""}
                   onchange="selectMcq('${key}','${q.id}','${k}')" />
+                <div>
+                  <strong>Option ${oi + 1}</strong>
+                  <div class="option-text">${escapeHtml(q.options[k])}</div>
+                </div>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }).join("")}
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
+      ${nextOrSubmitButton()}
+    </div>
+  `;
+}
+
+function renderGuidelinesMcq(card) {
+  const items = getOrderedQuestions("guidelinesMcq");
+  const answers = state.answers.guidelinesMcq;
+  let lastSection = "";
+
+  card.innerHTML = `
+    <div class="card-title">${SECTION_LABELS.guidelinesMcq}</div>
+    <div class="intro-box">Answer all guidelines questions below. Choose the best option for each.</div>
+    ${items.map((q, qi) => {
+      const selected = answers[q.id] || "";
+      const keys = getMcqOptionKeys(q, "guidelinesMcq");
+      const sectionHeading = q.section && q.section !== lastSection
+        ? (lastSection = q.section, `<div class="intro-box" style="margin-top:16px;font-weight:600;">${escapeHtml(q.section)}</div>`)
+        : "";
+      return `
+        ${sectionHeading}
+        <div class="question-block">
+          <h4>Question ${qi + 1}</h4>
+          <p style="margin-bottom:12px;line-height:1.6;">${escapeHtml(q.question)}</p>
+          <div class="option-list">
+            ${keys.map((k, oi) => `
+              <label class="option-item ${selected === k ? "selected" : ""}">
+                <input type="radio" name="guidelinesMcq_${q.id}" value="${k}" ${selected === k ? "checked" : ""}
+                  onchange="selectMcq('guidelinesMcq','${q.id}','${k}')" />
                 <div>
                   <strong>Option ${oi + 1}</strong>
                   <div class="option-text">${escapeHtml(q.options[k])}</div>
@@ -718,6 +771,7 @@ function renderMcqB(card) {
   ensureMcqBAnswersSeeded();
   setWorkspaceHintsMode(true);
   const items = getOrderedQuestions("mcqB");
+  const lastBtn = nextOrSubmitButton();
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.mcqB}</div>
     <div class="intro-box">Listen to each clip and edit the given transcript so it matches what is spoken. Click Next to check — you can continue only when every clip is correct.</div>
@@ -736,7 +790,7 @@ function renderMcqB(card) {
     `).join("")}
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
-      <button class="btn btn-primary" onclick="nextSection()">Next →</button>
+      ${lastBtn}
     </div>
   `;
   if (state.showTypingHints) showTypingHints("mcqB");
@@ -746,6 +800,7 @@ function renderMcqB(card) {
 function renderTranscribe(card) {
   setWorkspaceHintsMode(true);
   const items = getOrderedQuestions("transcribe");
+  const lastBtn = nextOrSubmitButton();
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.transcribe}</div>
     <div class="intro-box">Listen carefully and type exactly what you hear (spoken style — tags, fillers, stutters as spoken). Click Submit to check — you can finish only when every clip is correct.</div>
@@ -764,7 +819,7 @@ function renderTranscribe(card) {
     `).join("")}
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
-      <button class="btn btn-primary" id="submitAssessmentBtn" onclick="submitAssessment()">Submit assessment</button>
+      ${lastBtn}
     </div>
   `;
   if (state.showTypingHints) showTypingHints("transcribe");
@@ -807,6 +862,10 @@ function renderSection(scrollToTop) {
     setWorkspaceHintsMode(false);
     hideTypingHints();
     renderLearn(card);
+  } else if (key === "guidelinesMcq") {
+    setWorkspaceHintsMode(false);
+    hideTypingHints();
+    renderGuidelinesMcq(card);
   } else if (key === "mcqA") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
@@ -919,13 +978,24 @@ function showTypingHints(key) {
   });
 }
 
-function validateCurrentSection() {
-  const key = getSectionOrder()[state.sectionIndex];
+function isLastSection() {
+  const sections = getSectionOrder();
+  return state.sectionIndex >= sections.length - 1;
+}
+
+function nextOrSubmitButton() {
+  return isLastSection()
+    ? '<button class="btn btn-primary" id="submitAssessmentBtn" onclick="submitAssessment()">Submit assessment</button>'
+    : '<button class="btn btn-primary" onclick="nextSection()">Next →</button>';
+}
+
+function validateSection(key) {
   if (key === "learn") return true;
-  if (key === "mcqA") {
-    for (const q of ASSESSMENT_DATA.mcqA) {
-      if (!state.answers.mcqA[q.id]) {
-        showToast(`Please answer ${q.id}.`, "error");
+  if (key === "guidelinesMcq" || key === "mcqA") {
+    const sectionData = ASSESSMENT_DATA[key] || [];
+    for (const q of sectionData) {
+      if (!state.answers[key][q.id]) {
+        showToast(`Please answer question ${q.id}.`, "error");
         return false;
       }
     }
@@ -950,17 +1020,38 @@ function validateCurrentSection() {
 
     const evalResult = evaluateTypingSection(key);
     if (!evalResult.allCorrect) {
-      state.showTypingHints = true;
-      showTypingHints(key);
+      if (key === getSectionOrder()[state.sectionIndex]) {
+        state.showTypingHints = true;
+        showTypingHints(key);
+      }
       showToast("Fix the highlighted words before continuing.", "error");
       return false;
     }
-
-    state.showTypingHints = false;
-    hideTypingHints();
     return true;
   }
   return true;
+}
+
+function validateAllSections() {
+  const sections = getSectionOrder();
+  for (const key of sections) {
+    if (!validateSection(key)) {
+      return false;
+    }
+  }
+  state.showTypingHints = false;
+  hideTypingHints();
+  return true;
+}
+
+function validateCurrentSection() {
+  const key = getSectionOrder()[state.sectionIndex];
+  const ok = validateSection(key);
+  if (ok && (key === "mcqB" || key === "transcribe")) {
+    state.showTypingHints = false;
+    hideTypingHints();
+  }
+  return ok;
 }
 
 function nextSection() {
@@ -983,18 +1074,16 @@ function prevSection() {
   }
 }
 
-function scoreAssessment() {
-  const w = ASSESSMENT_DATA.weights;
-  const mcqADetail = ASSESSMENT_DATA.mcqA.map(q => {
-    const selected = state.answers.mcqA[q.id] || "";
+function scoreMcqSection(sectionKey, perItemWeight) {
+  return (ASSESSMENT_DATA[sectionKey] || []).map((q) => {
+    const selected = state.answers[sectionKey][q.id] || "";
     const correct = selected === q.correctKey;
-    // If multiple options share identical gold text, accept any matching text
     const selectedText = normalizeText(q.options[selected] || "");
     const correctText = normalizeText(q.options[q.correctKey] || "");
     const isCorrect = !!(correct || (selectedText && selectedText === correctText));
-    const points = isCorrect ? w.mcqAPerItem : 0;
+    const points = isCorrect ? perItemWeight : 0;
     return {
-      clipId: q.id,
+      questionId: q.id,
       selected,
       correctKey: q.correctKey,
       points,
@@ -1003,6 +1092,20 @@ function scoreAssessment() {
       correctAnswer: q.options[q.correctKey] || ""
     };
   });
+}
+
+function scoreAssessment() {
+  const w = ASSESSMENT_DATA.weights;
+  const guidelinesMcqDetail = scoreMcqSection("guidelinesMcq", w.guidelinesMcqPerItem || 2.5);
+  const mcqADetail = scoreMcqSection("mcqA", w.mcqAPerItem).map((d) => ({
+    clipId: d.questionId,
+    selected: d.selected,
+    correctKey: d.correctKey,
+    points: d.points,
+    isCorrect: d.isCorrect,
+    answer: d.answer,
+    correctAnswer: d.correctAnswer
+  }));
   const mcqBDetail = ASSESSMENT_DATA.mcqB.map(q => {
     const answer = mcqBAnswerText(q);
     const similarity = similarityPercent(answer, q.correct || "");
@@ -1022,6 +1125,7 @@ function scoreAssessment() {
     return { clipId: q.id, answer, gold: q.gold, similarity };
   });
 
+  const guidelinesMcqScore = guidelinesMcqDetail.reduce((s, x) => s + x.points, 0);
   const mcqAScore = mcqADetail.reduce((s, x) => s + x.points, 0);
   const mcqBScore = mcqBDetail.reduce((s, x) => s + x.points, 0);
   const avgSim = trDetail.length
@@ -1030,7 +1134,17 @@ function scoreAssessment() {
   const transcribeScore = Math.round((avgSim / 100) * w.transcribeMax);
   const overallScore = Math.max(0, Math.min(100, Math.round(mcqAScore + mcqBScore + transcribeScore)));
 
-  return { mcqAScore, mcqBScore, transcribeScore, overallScore, mcqADetail, mcqBDetail, trDetail };
+  return {
+    guidelinesMcqScore,
+    mcqAScore,
+    mcqBScore,
+    transcribeScore,
+    overallScore,
+    guidelinesMcqDetail,
+    mcqADetail,
+    mcqBDetail,
+    trDetail
+  };
 }
 
 function tokenizeWords(text) {
@@ -1133,6 +1247,19 @@ function renderFeedback(scores) {
   const panel = document.getElementById("feedbackPanel");
   if (!panel) return;
 
+  const guidelinesHtml = (scores.guidelinesMcqDetail || []).map((d) => `
+    <div class="feedback-item">
+      <div class="feedback-item-head">
+        <strong>${escapeHtml(d.questionId)}</strong>
+        ${feedbackBadge(!!d.isCorrect)}
+      </div>
+      <div class="feedback-label">Your answer</div>
+      <div class="feedback-text">${escapeHtml(d.answer || "(none)")}</div>
+      <div class="feedback-label">Correct answer</div>
+      <div class="feedback-text">${escapeHtml(d.correctAnswer || "")}</div>
+    </div>
+  `).join("");
+
   const mcqAHtml = (scores.mcqADetail || []).map((d) => `
     <div class="feedback-item">
       <div class="feedback-item-head">
@@ -1182,6 +1309,10 @@ function renderFeedback(scores) {
 
   panel.innerHTML = `
     <div class="feedback-section">
+      <h3>${escapeHtml(SECTION_LABELS.guidelinesMcq)}</h3>
+      ${guidelinesHtml || "<div class=\"feedback-item\">No answers</div>"}
+    </div>
+    <div class="feedback-section">
       <h3>${escapeHtml(SECTION_LABELS.mcqA)}</h3>
       ${mcqAHtml || "<div class=\"feedback-item\">No answers</div>"}
     </div>
@@ -1197,7 +1328,7 @@ function renderFeedback(scores) {
 }
 
 async function submitAssessment() {
-  if (!validateCurrentSection()) return;
+  if (!validateAllSections()) return;
   const btn = document.getElementById("submitAssessmentBtn");
   if (btn) { btn.disabled = true; btn.textContent = "Scoring…"; }
 
@@ -1208,9 +1339,11 @@ async function submitAssessment() {
     name: state.name,
     email: state.email,
     overallScore: scores.overallScore,
+    guidelinesMcqScore: scores.guidelinesMcqScore,
     mcqAScore: scores.mcqAScore,
     mcqBScore: scores.mcqBScore,
     transcribeScore: scores.transcribeScore,
+    guidelinesMcq: scores.guidelinesMcqDetail,
     mcqA: scores.mcqADetail,
     mcqB: scores.mcqBDetail,
     transcribe: scores.trDetail,
@@ -1270,7 +1403,7 @@ async function startSession() {
     sectionOrder: buildSectionOrder(),
     itemOrders: buildItemOrders(ASSESSMENT_DATA),
     optionOrders: buildOptionOrders(ASSESSMENT_DATA),
-    answers: { mcqA: {}, mcqB: {}, transcribe: {} },
+    answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: new Date().toISOString(),
     sessionStartTime: Date.now(),
     showTypingHints: false
@@ -1306,7 +1439,7 @@ async function resumeSession(session) {
     sectionOrder: session.sectionOrder || null,
     itemOrders: session.itemOrders || null,
     optionOrders: session.optionOrders || null,
-    answers: session.answers || { mcqA: {}, mcqB: {}, transcribe: {} },
+    answers: session.answers || { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: session.startedAt || new Date().toISOString(),
     sessionStartTime: session.sessionStartTime || Date.now(),
     showTypingHints: false
@@ -1332,9 +1465,9 @@ function endSession(skipConfirm) {
   state = {
     name: "", email: "", sectionIndex: 0,
     sectionOrder: SECTIONS_DEFAULT.slice(),
-    itemOrders: { mcqA: [], mcqB: [], transcribe: [] },
-    optionOrders: { mcqA: {} },
-    answers: { mcqA: {}, mcqB: {}, transcribe: {} },
+    itemOrders: { guidelinesMcq: [], mcqA: [], mcqB: [], transcribe: [] },
+    optionOrders: { guidelinesMcq: {}, mcqA: {} },
+    answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: null, sessionStartTime: null,
     showTypingHints: false
   };

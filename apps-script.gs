@@ -382,7 +382,9 @@ const ASSESSMENT_HEADERS = [
   "McqBDetail",
   "TranscribeDetail",
   "SessionElapsedSec",
-  "SubmittedAt"
+  "SubmittedAt",
+  "GuidelinesMcqScore",
+  "GuidelinesMcqDetail"
 ];
 
 function handleAssessmentPost(data) {
@@ -463,7 +465,9 @@ function buildAssessmentRow(data) {
     JSON.stringify(data.mcqB || []),
     JSON.stringify(data.transcribe || []),
     data.sessionElapsedSec != null ? data.sessionElapsedSec : "",
-    data.submittedAt || ""
+    data.submittedAt || "",
+    data.guidelinesMcqScore != null ? data.guidelinesMcqScore : "",
+    JSON.stringify(data.guidelinesMcq || [])
   ];
 }
 
