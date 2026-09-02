@@ -814,6 +814,54 @@ const AUDIO_QUEUE = [
   { id: "clip_25", file: "audio/clip_25.m4a",  workitem: "trn-025-n9p2", locale: "en_US" },
 ];
 
+function shuffleCopy(arr) {
+  const a = Array.isArray(arr) ? arr.slice() : [];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i];
+    a[i] = a[j];
+    a[j] = tmp;
+  }
+  return a;
+}
+
+function buildClipOrder() {
+  return shuffleCopy(AUDIO_QUEUE.map((clip) => clip.id));
+}
+
+function clipById(id) {
+  return AUDIO_QUEUE.find((clip) => clip.id === id) || null;
+}
+
+function getSessionClipCount() {
+  return Array.isArray(state.clipOrder) ? state.clipOrder.length : AUDIO_QUEUE.length;
+}
+
+function getClipAtIndex(index) {
+  if (!Array.isArray(state.clipOrder) || index < 0 || index >= state.clipOrder.length) {
+    return null;
+  }
+  return clipById(state.clipOrder[index]);
+}
+
+function ensureClipOrder(savedOrder) {
+  const allIds = AUDIO_QUEUE.map((clip) => clip.id);
+  let order = Array.isArray(savedOrder) ? savedOrder.filter((id) => allIds.includes(id)) : [];
+
+  if (!order.length) {
+    order = buildClipOrder();
+    return order;
+  }
+
+  allIds.forEach((id) => {
+    if (!order.includes(id)) {
+      order.push(id);
+    }
+  });
+
+  return order;
+}
+
 const NATIVITY_OPTIONS = ["Native", "Non-Native", "Unknown", "TTS"];
 const GENDER_OPTIONS = ["Male", "Female", "Unknown"];
 
@@ -858,6 +906,7 @@ let state = {
   name: "",
   email: "",
   currentIndex: 0,
+  clipOrder: [],
   playCount: 0,
   startTime: null,
   sessionStartTime: null,
@@ -876,6 +925,7 @@ function saveSession() {
     name: state.name,
     email: state.email,
     currentIndex: state.currentIndex,
+    clipOrder: state.clipOrder,
     sessionStartTime: state.sessionStartTime,
     startedAt: state.startedAt || new Date().toISOString(),
   };
@@ -933,6 +983,8 @@ async function startSession() {
   }
   state.name = user.name;
   state.email = user.email;
+  state.currentIndex = 0;
+  state.clipOrder = buildClipOrder();
   state.startedAt = new Date().toISOString();
   state.sessionStartTime = Date.now();
   updateHeader();
@@ -953,15 +1005,17 @@ async function resumeSession(session) {
   state.name = session.name;
   state.email = session.email;
   state.currentIndex = session.currentIndex;
+  state.clipOrder = ensureClipOrder(session.clipOrder);
   state.startedAt = session.startedAt || new Date().toISOString();
   state.sessionStartTime = session.sessionStartTime
     || (session.startedAt ? Date.parse(session.startedAt) : Date.now());
   state.playCount = 0;
   state.startTime = null;
   updateHeader();
+  saveSession();
   document.getElementById("loginScreen").style.display = "none";
 
-  if (session.currentIndex >= AUDIO_QUEUE.length) {
+  if (session.currentIndex >= state.clipOrder.length) {
     showCompletion();
     showToast(`Welcome back, ${session.name}. Your session is complete.`, "success");
     return;
@@ -980,6 +1034,7 @@ function resetSession() {
     name: "",
     email: "",
     currentIndex: 0,
+    clipOrder: [],
     playCount: 0,
     startTime: null,
     sessionStartTime: null,
@@ -997,7 +1052,7 @@ function resetSession() {
    CLIP LOADING
    ========================================================= */
 function loadClip(index) {
-  if (index >= AUDIO_QUEUE.length) {
+  if (index >= getSessionClipCount()) {
     stopClipTimer();
     state.currentIndex = index;
     saveSession();
@@ -1009,7 +1064,13 @@ function loadClip(index) {
   state.startTime = Date.now();
   state.clipStartedAt = new Date().toISOString();
 
-  const clip = AUDIO_QUEUE[index];
+  const clip = getClipAtIndex(index);
+  if (!clip) {
+    stopClipTimer();
+    saveSession();
+    showCompletion();
+    return;
+  }
   audioEl.src = clip.file;
   audioEl.load();
 
@@ -1035,9 +1096,9 @@ function loadClip(index) {
 }
 
 function updateProgress() {
-  const total = AUDIO_QUEUE.length;
-  const current = state.currentIndex + 1;
-  const pct = ((state.currentIndex) / total) * 100;
+  const total = getSessionClipCount();
+  const current = Math.min(state.currentIndex + 1, total);
+  const pct = total ? ((state.currentIndex) / total) * 100 : 0;
   document.getElementById("progressFill").style.width = pct + "%";
   document.getElementById("progressCount").textContent = `${current} of ${total}`;
 }
@@ -1270,7 +1331,11 @@ function validateSubmission() {
 async function submitClip() {
   if (!validateSubmission()) return;
 
-  const clip = AUDIO_QUEUE[state.currentIndex];
+  const clip = getClipAtIndex(state.currentIndex);
+  if (!clip) {
+    showToast("Could not load this clip.", "error");
+    return;
+  }
   const speakers = collectSpeakers();
   const timing = buildTimingFields();
   stopClipTimer();
@@ -1339,7 +1404,7 @@ async function sendToSheets(payload) {
 
 function showCompletion() {
   stopClipTimer();
-  document.getElementById("totalSubmitted").textContent = AUDIO_QUEUE.length;
+  document.getElementById("totalSubmitted").textContent = getSessionClipCount();
   document.getElementById("mainApp").style.display = "none";
   document.getElementById("completeScreen").style.display = "grid";
 }
