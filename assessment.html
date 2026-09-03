@@ -72,7 +72,11 @@
   .btn-primary:hover { background: var(--primary-hover); }
   .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
   .btn-secondary { background: white; color: var(--text); border: 1px solid var(--border); }
-  .btn-row { display: flex; gap: 10px; margin-top: 20px; }
+  .btn-force {
+    background: #fff7ed; color: #c2410c; border: 1px solid #fdba74; flex: 1.2;
+  }
+  .btn-force:hover { background: #ffedd5; }
+  .btn-row { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
   .btn-row .btn { width: auto; flex: 1; }
 
   .app-header {
@@ -345,6 +349,7 @@ const SECTION_LABELS = {
   mcqB: "Correct the given transcription:",
   transcribe: "Transcribe the audios"
 };
+const FORCE_CONTINUE_THRESHOLDS = { mcqB: 80, transcribe: 70 };
 
 let ASSESSMENT_DATA = null;
 let state = {
@@ -357,7 +362,8 @@ let state = {
   answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
   startedAt: null,
   sessionStartTime: null,
-  showTypingHints: false
+  showTypingHints: false,
+  forceContinuedSections: { mcqB: false, transcribe: false }
 };
 let activeAudio = null;
 let activeAudioPath = null;
@@ -514,7 +520,8 @@ function saveSession() {
     optionOrders: state.optionOrders,
     answers: state.answers,
     startedAt: state.startedAt,
-    sessionStartTime: state.sessionStartTime
+    sessionStartTime: state.sessionStartTime,
+    forceContinuedSections: state.forceContinuedSections
   }));
 }
 
@@ -774,7 +781,7 @@ function renderMcqB(card) {
   const lastBtn = nextOrSubmitButton();
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.mcqB}</div>
-    <div class="intro-box">Listen to each clip and edit the given transcript so it matches what is spoken. Click Next to check — you can continue only when every clip is correct.</div>
+    <div class="intro-box">Listen to each clip and edit the given transcript so it matches what is spoken. Click Next to check — continue when every clip is correct, or use <strong>Continue anyway</strong> if section accuracy is at least ${FORCE_CONTINUE_THRESHOLDS.mcqB}%.</div>
     ${items.map((q, i) => `
       <div class="question-block" data-clip-id="${q.id}">
         <h4>Clip ${i + 1}: ${q.id}</h4>
@@ -790,6 +797,7 @@ function renderMcqB(card) {
     `).join("")}
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
+      ${forceContinueButtonHtml("mcqB")}
       ${lastBtn}
     </div>
   `;
@@ -803,7 +811,7 @@ function renderTranscribe(card) {
   const lastBtn = nextOrSubmitButton();
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.transcribe}</div>
-    <div class="intro-box">Listen carefully and type exactly what you hear (spoken style — tags, fillers, stutters as spoken). Click Submit to check — you can finish only when every clip is correct.</div>
+    <div class="intro-box">Listen carefully and type exactly what you hear (spoken style — tags, fillers, stutters as spoken). Click Submit to check — finish when every clip is correct, or use <strong>Continue anyway</strong> if section accuracy is at least ${FORCE_CONTINUE_THRESHOLDS.transcribe}%.</div>
     ${items.map((q, i) => `
       <div class="question-block" data-clip-id="${q.id}">
         <h4>Clip ${i + 1}: ${q.id}</h4>
@@ -819,6 +827,7 @@ function renderTranscribe(card) {
     `).join("")}
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
+      ${forceContinueButtonHtml("transcribe")}
       ${lastBtn}
     </div>
   `;
@@ -902,6 +911,8 @@ function remainingMissingCount(answer, gold) {
 function evaluateTypingSection(key) {
   const items = [];
   let allCorrect = true;
+  let similaritySum = 0;
+  let clipCount = 0;
 
   if (key === "mcqB") {
     for (const q of (ASSESSMENT_DATA.mcqB || [])) {
@@ -909,12 +920,16 @@ function evaluateTypingSection(key) {
       const gold = q.correct || "";
       const exact = normalizeText(answer) === normalizeText(gold);
       if (!exact) allCorrect = false;
+      const similarity = similarityPercent(answer, gold);
+      similaritySum += similarity;
+      clipCount++;
       const diff = renderTypedDiff(answer, gold);
       items.push({
         id: q.id,
         remaining: remainingMissingCount(answer, gold),
         answerHtml: diff.answerHtml,
         exact,
+        similarity,
         previewId: `hint_mcqb_${q.id}`
       });
     }
@@ -924,18 +939,26 @@ function evaluateTypingSection(key) {
       const gold = q.gold || "";
       const exact = normalizeText(answer) === normalizeText(gold);
       if (!exact) allCorrect = false;
+      const similarity = similarityPercent(answer, gold);
+      similaritySum += similarity;
+      clipCount++;
       const diff = renderTypedDiff(answer, gold);
       items.push({
         id: q.id,
         remaining: remainingMissingCount(answer, gold),
         answerHtml: diff.answerHtml,
         exact,
+        similarity,
         previewId: `hint_tr_${q.id}`
       });
     }
   }
 
-  return { allCorrect, items };
+  const averageSimilarity = clipCount ? Math.round(similaritySum / clipCount) : 0;
+  const threshold = FORCE_CONTINUE_THRESHOLDS[key] ?? 100;
+  const canForceContinue = averageSimilarity >= threshold;
+
+  return { allCorrect, items, averageSimilarity, canForceContinue, threshold };
 }
 
 function hideTypingHints() {
@@ -957,9 +980,15 @@ function showTypingHints(key) {
   const totalRemaining = evalResult.items.reduce((s, x) => s + x.remaining, 0);
   sidebar.classList.remove("hidden");
   totalEl.className = "hint-sidebar-total" + (totalRemaining === 0 ? " done" : "");
-  totalEl.textContent = totalRemaining === 0
-    ? "All words matched"
-    : `${totalRemaining} word${totalRemaining === 1 ? "" : "s"} remaining`;
+  if (totalRemaining === 0) {
+    totalEl.textContent = "All words matched";
+  } else if (evalResult.canForceContinue) {
+    totalEl.textContent =
+      `${totalRemaining} word${totalRemaining === 1 ? "" : "s"} remaining · Section accuracy: ${evalResult.averageSimilarity}% — you can continue anyway`;
+  } else {
+    totalEl.textContent =
+      `${totalRemaining} word${totalRemaining === 1 ? "" : "s"} remaining · Section accuracy: ${evalResult.averageSimilarity}% (need ${evalResult.threshold}% to continue anyway)`;
+  }
 
   list.innerHTML = evalResult.items.map((item) => `
     <div class="hint-clip-row">
@@ -987,6 +1016,37 @@ function nextOrSubmitButton() {
   return isLastSection()
     ? '<button class="btn btn-primary" id="submitAssessmentBtn" onclick="submitAssessment()">Submit assessment</button>'
     : '<button class="btn btn-primary" onclick="nextSection()">Next →</button>';
+}
+
+function forceContinueButtonHtml(key) {
+  if (!state.showTypingHints) return "";
+  const evalResult = evaluateTypingSection(key);
+  if (evalResult.allCorrect || !evalResult.canForceContinue) return "";
+  const label = isLastSection() ? "Submit anyway" : "Continue anyway";
+  return `<button type="button" class="btn btn-force" onclick="forceContinueSection('${key}')">${label}</button>`;
+}
+
+function forceContinueSection(key) {
+  if (key !== "mcqB" && key !== "transcribe") return;
+  const evalResult = evaluateTypingSection(key);
+  if (!evalResult.canForceContinue) {
+    showToast("Section accuracy is not high enough to continue anyway.", "error");
+    return;
+  }
+  state.forceContinuedSections[key] = true;
+  state.showTypingHints = false;
+  hideTypingHints();
+  saveSession();
+  if (isLastSection()) {
+    submitAssessment();
+    return;
+  }
+  const sections = getSectionOrder();
+  if (state.sectionIndex < sections.length - 1) {
+    state.sectionIndex++;
+    saveSession();
+    renderSection(true);
+  }
 }
 
 function validateSection(key) {
@@ -1019,15 +1079,25 @@ function validateSection(key) {
     }
 
     const evalResult = evaluateTypingSection(key);
-    if (!evalResult.allCorrect) {
-      if (key === getSectionOrder()[state.sectionIndex]) {
-        state.showTypingHints = true;
-        showTypingHints(key);
-      }
-      showToast("Fix the highlighted words before continuing.", "error");
-      return false;
+    if (evalResult.allCorrect) return true;
+    if (state.forceContinuedSections[key]) return true;
+
+    if (key === getSectionOrder()[state.sectionIndex]) {
+      state.showTypingHints = true;
+      renderSection(false);
     }
-    return true;
+    if (evalResult.canForceContinue) {
+      showToast(
+        `Section accuracy is ${evalResult.averageSimilarity}%. Use "${isLastSection() ? "Submit anyway" : "Continue anyway"}" to proceed.`,
+        "error"
+      );
+    } else {
+      showToast(
+        `Fix the highlighted words. Section accuracy is ${evalResult.averageSimilarity}% (need ${evalResult.threshold}% to continue anyway).`,
+        "error"
+      );
+    }
+    return false;
   }
   return true;
 }
@@ -1409,7 +1479,8 @@ async function startSession() {
       answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
       startedAt: new Date().toISOString(),
       sessionStartTime: Date.now(),
-      showTypingHints: false
+      showTypingHints: false,
+      forceContinuedSections: { mcqB: false, transcribe: false }
     };
     document.getElementById("headerName").textContent = user.name;
     document.getElementById("headerEmail").textContent = user.email;
@@ -1462,7 +1533,8 @@ async function resumeSession(session) {
     answers: session.answers || { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: session.startedAt || new Date().toISOString(),
     sessionStartTime: session.sessionStartTime || Date.now(),
-    showTypingHints: false
+    showTypingHints: false,
+    forceContinuedSections: session.forceContinuedSections || { mcqB: false, transcribe: false }
   };
   ensureShuffleOrders();
   state.sectionIndex = Math.min(
@@ -1489,7 +1561,8 @@ function endSession(skipConfirm) {
     optionOrders: { guidelinesMcq: {}, mcqA: {} },
     answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: null, sessionStartTime: null,
-    showTypingHints: false
+    showTypingHints: false,
+    forceContinuedSections: { mcqB: false, transcribe: false }
   };
   hideTypingHints();
   setWorkspaceHintsMode(false);
