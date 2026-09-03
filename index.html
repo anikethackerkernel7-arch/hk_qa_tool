@@ -592,7 +592,7 @@
       <input type="email" id="emailInput" placeholder="name@company.com" autocomplete="email" />
       <div class="field-hint">Only registered trainee emails can start a session. Your name is assigned automatically.</div>
     </div>
-    <button class="btn btn-primary" style="width:100%" onclick="startSession()">Start session</button>
+    <button class="btn btn-primary" id="loginBtn" style="width:100%" onclick="startSession()">Start session</button>
   </div>
 </div>
 
@@ -965,33 +965,53 @@ function updateHeader() {
    ========================================================= */
 async function startSession() {
   const email = document.getElementById("emailInput").value.trim();
+  const btn = document.getElementById("loginBtn");
   if (!email || !email.includes("@")) {
     showToast("Please enter a valid email address.", "error");
     return;
   }
-  const user = await lookupAllowedUser(email);
-  if (!user) {
-    showToast(getLastAuthMessage(), "error");
-    return;
-  }
+  setLoginLoading(btn, true, "Verifying...");
   try {
-    await loadClipTexts();
-  } catch (err) {
-    console.error(err);
-    showToast("Could not load clip texts. Refresh and try again.", "error");
-    return;
+    const user = await lookupAllowedUser(email);
+    if (!user) {
+      showToast(getLastAuthMessage(), "error");
+      return;
+    }
+    try {
+      await loadClipTexts();
+    } catch (err) {
+      console.error(err);
+      showToast("Could not load clip texts. Refresh and try again.", "error");
+      return;
+    }
+    state.name = user.name;
+    state.email = user.email;
+    state.currentIndex = 0;
+    state.clipOrder = buildClipOrder();
+    state.startedAt = new Date().toISOString();
+    state.sessionStartTime = Date.now();
+    updateHeader();
+    saveSession();
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("mainApp").style.display = "block";
+    loadClip(0);
+  } finally {
+    setLoginLoading(btn, false);
   }
-  state.name = user.name;
-  state.email = user.email;
-  state.currentIndex = 0;
-  state.clipOrder = buildClipOrder();
-  state.startedAt = new Date().toISOString();
-  state.sessionStartTime = Date.now();
-  updateHeader();
-  saveSession();
-  document.getElementById("loginScreen").style.display = "none";
-  document.getElementById("mainApp").style.display = "block";
-  loadClip(0);
+}
+
+function setLoginLoading(btn, loading, loadingLabel) {
+  if (!btn) return;
+  if (!btn.dataset.defaultLabel) {
+    btn.dataset.defaultLabel = btn.textContent;
+  }
+  if (loading) {
+    btn.disabled = true;
+    btn.textContent = loadingLabel || "Please wait...";
+  } else {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.defaultLabel;
+  }
 }
 
 async function resumeSession(session) {

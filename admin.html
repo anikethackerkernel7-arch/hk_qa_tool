@@ -342,6 +342,9 @@ async function adminLogin() {
   }
 
   btn.disabled = true;
+  const defaultLabel = btn.dataset.defaultLabel || btn.textContent;
+  btn.dataset.defaultLabel = defaultLabel;
+  btn.textContent = "Signing in...";
   try {
     const data = await apiPost({
       action: "admin_login",
@@ -358,6 +361,7 @@ async function adminLogin() {
     showToast(err.message || "Sign in failed.", "error");
   } finally {
     btn.disabled = false;
+    btn.textContent = defaultLabel;
   }
 }
 

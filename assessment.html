@@ -273,7 +273,7 @@
       <input type="email" id="emailInput" placeholder="name@company.com" autocomplete="email" />
       <div class="field-hint">Same registered emails as the practice tool. Name is assigned automatically.</div>
     </div>
-    <button class="btn btn-primary" onclick="startSession()">Start assessment</button>
+    <button class="btn btn-primary" id="loginBtn" onclick="startSession()">Start assessment</button>
   </div>
 </div>
 
@@ -337,7 +337,7 @@ const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syft
 window.SHEETS_ENDPOINT = SHEETS_ENDPOINT;
 const SESSION_KEY = "argos_assessment_session";
 
-const SECTIONS_DEFAULT = ["learn", "guidelinesMcq", "mcqA", "mcqB", "transcribe"];
+const SECTIONS_DEFAULT = ["guidelinesMcq", "learn", "mcqA", "mcqB", "transcribe"];
 const SECTION_LABELS = {
   learn: "Training material",
   guidelinesMcq: "Guidelines comprehension",
@@ -375,7 +375,7 @@ function shuffleCopy(arr) {
 }
 
 function buildSectionOrder() {
-  return ["learn", "guidelinesMcq"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
+  return ["guidelinesMcq", "learn"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
 }
 
 function buildItemOrders(data) {
@@ -405,8 +405,8 @@ function ensureShuffleOrders() {
   if (!ASSESSMENT_DATA) loadData();
   let changed = false;
   const validSections = Array.isArray(state.sectionOrder)
-    && state.sectionOrder[0] === "learn"
-    && state.sectionOrder[1] === "guidelinesMcq"
+    && state.sectionOrder[0] === "guidelinesMcq"
+    && state.sectionOrder[1] === "learn"
     && state.sectionOrder.length === 5
     && ["mcqA", "mcqB", "transcribe"].every((k) => state.sectionOrder.includes(k));
   if (!validSections) {
@@ -1380,40 +1380,60 @@ async function sendToSheets(payload) {
 
 async function startSession() {
   const email = document.getElementById("emailInput").value.trim();
+  const btn = document.getElementById("loginBtn");
   if (!email || !email.includes("@")) {
     showToast("Please enter a valid email address.", "error");
     return;
   }
-  const user = await lookupAllowedUser(email);
-  if (!user) {
-    showToast(getLastAuthMessage(), "error");
-    return;
-  }
+  setLoginLoading(btn, true, "Verifying...");
   try {
-    loadData();
-  } catch (err) {
-    console.error(err);
-    showToast("Could not load assessment data.", "error");
-    return;
+    const user = await lookupAllowedUser(email);
+    if (!user) {
+      showToast(getLastAuthMessage(), "error");
+      return;
+    }
+    try {
+      loadData();
+    } catch (err) {
+      console.error(err);
+      showToast("Could not load assessment data.", "error");
+      return;
+    }
+    state = {
+      name: user.name,
+      email: user.email,
+      sectionIndex: 0,
+      sectionOrder: buildSectionOrder(),
+      itemOrders: buildItemOrders(ASSESSMENT_DATA),
+      optionOrders: buildOptionOrders(ASSESSMENT_DATA),
+      answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
+      startedAt: new Date().toISOString(),
+      sessionStartTime: Date.now(),
+      showTypingHints: false
+    };
+    document.getElementById("headerName").textContent = user.name;
+    document.getElementById("headerEmail").textContent = user.email;
+    saveSession();
+    document.getElementById("loginScreen").classList.add("hidden");
+    document.getElementById("mainApp").classList.remove("hidden");
+    renderSection();
+  } finally {
+    setLoginLoading(btn, false);
   }
-  state = {
-    name: user.name,
-    email: user.email,
-    sectionIndex: 0,
-    sectionOrder: buildSectionOrder(),
-    itemOrders: buildItemOrders(ASSESSMENT_DATA),
-    optionOrders: buildOptionOrders(ASSESSMENT_DATA),
-    answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
-    startedAt: new Date().toISOString(),
-    sessionStartTime: Date.now(),
-    showTypingHints: false
-  };
-  document.getElementById("headerName").textContent = user.name;
-  document.getElementById("headerEmail").textContent = user.email;
-  saveSession();
-  document.getElementById("loginScreen").classList.add("hidden");
-  document.getElementById("mainApp").classList.remove("hidden");
-  renderSection();
+}
+
+function setLoginLoading(btn, loading, loadingLabel) {
+  if (!btn) return;
+  if (!btn.dataset.defaultLabel) {
+    btn.dataset.defaultLabel = btn.textContent;
+  }
+  if (loading) {
+    btn.disabled = true;
+    btn.textContent = loadingLabel || "Please wait...";
+  } else {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.defaultLabel;
+  }
 }
 
 async function resumeSession(session) {
