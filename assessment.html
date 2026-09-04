@@ -447,6 +447,13 @@ function getSectionOrder() {
   return state.sectionOrder;
 }
 
+function getMcqDisplayLabel(sectionKey, index, q) {
+  const n = index + 1;
+  if (sectionKey === "guidelinesMcq") return `Question ${n}`;
+  if (sectionKey === "mcqA") return `Question ${n} (${q.id})`;
+  return q.id;
+}
+
 function getOrderedQuestions(sectionKey) {
   ensureShuffleOrders();
   const all = ASSESSMENT_DATA[sectionKey] || [];
@@ -1055,10 +1062,11 @@ function validateSection(key, opts) {
   const fromAllSections = !!(opts && opts.fromAllSections);
   if (key === "learn") return true;
   if (key === "guidelinesMcq" || key === "mcqA") {
-    const sectionData = ASSESSMENT_DATA[key] || [];
-    for (const q of sectionData) {
+    const sectionData = getOrderedQuestions(key);
+    for (let i = 0; i < sectionData.length; i++) {
+      const q = sectionData[i];
       if (!state.answers[key][q.id]) {
-        showToast(`Please answer question ${q.id}.`, "error");
+        showToast(`Please answer ${getMcqDisplayLabel(key, i, q)}.`, "error");
         return false;
       }
     }
@@ -1204,14 +1212,17 @@ function prevSection() {
 }
 
 function scoreMcqSection(sectionKey, perItemWeight) {
-  return (ASSESSMENT_DATA[sectionKey] || []).map((q) => {
+  const questions = sectionKey === "guidelinesMcq"
+    ? getOrderedQuestions(sectionKey)
+    : (ASSESSMENT_DATA[sectionKey] || []);
+  return questions.map((q, qi) => {
     const selected = state.answers[sectionKey][q.id] || "";
     const correct = selected === q.correctKey;
     const selectedText = normalizeText(q.options[selected] || "");
     const correctText = normalizeText(q.options[q.correctKey] || "");
     const isCorrect = !!(correct || (selectedText && selectedText === correctText));
     const points = isCorrect ? perItemWeight : 0;
-    return {
+    const row = {
       questionId: q.id,
       selected,
       correctKey: q.correctKey,
@@ -1220,6 +1231,12 @@ function scoreMcqSection(sectionKey, perItemWeight) {
       answer: q.options[selected] || "",
       correctAnswer: q.options[q.correctKey] || ""
     };
+    if (sectionKey === "guidelinesMcq") {
+      row.displayNumber = qi + 1;
+      row.question = q.question || "";
+      row.section = q.section || "";
+    }
+    return row;
   });
 }
 
@@ -1379,9 +1396,12 @@ function renderFeedback(scores) {
   const guidelinesHtml = (scores.guidelinesMcqDetail || []).map((d) => `
     <div class="feedback-item">
       <div class="feedback-item-head">
-        <strong>${escapeHtml(d.questionId)}</strong>
+        <strong>Question ${d.displayNumber || escapeHtml(d.questionId)}</strong>
         ${feedbackBadge(!!d.isCorrect)}
       </div>
+      ${d.section ? `<div class="feedback-label">Topic</div><div class="feedback-text">${escapeHtml(d.section)}</div>` : ""}
+      <div class="feedback-label">Question</div>
+      <div class="feedback-text">${escapeHtml(d.question || d.questionId || "")}</div>
       <div class="feedback-label">Your answer</div>
       <div class="feedback-text">${escapeHtml(d.answer || "(none)")}</div>
       <div class="feedback-label">Correct answer</div>
