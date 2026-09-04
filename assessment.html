@@ -363,7 +363,8 @@ let state = {
   startedAt: null,
   sessionStartTime: null,
   showTypingHints: false,
-  forceContinuedSections: { mcqB: false, transcribe: false }
+  forceContinuedSections: { mcqB: false, transcribe: false },
+  guidelinesSubmitted: false
 };
 let activeAudio = null;
 let activeAudioPath = null;
@@ -521,7 +522,8 @@ function saveSession() {
     answers: state.answers,
     startedAt: state.startedAt,
     sessionStartTime: state.sessionStartTime,
-    forceContinuedSections: state.forceContinuedSections
+    forceContinuedSections: state.forceContinuedSections,
+    guidelinesSubmitted: state.guidelinesSubmitted
   }));
 }
 
@@ -744,7 +746,7 @@ function renderGuidelinesMcq(card) {
     }).join("")}
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
-      <button class="btn btn-primary" onclick="nextSection()">Next →</button>
+      <button class="btn btn-primary" id="guidelinesNextBtn" onclick="nextSection()">Next →</button>
     </div>
   `;
 }
@@ -1049,7 +1051,8 @@ function forceContinueSection(key) {
   }
 }
 
-function validateSection(key) {
+function validateSection(key, opts) {
+  const fromAllSections = !!(opts && opts.fromAllSections);
   if (key === "learn") return true;
   if (key === "guidelinesMcq" || key === "mcqA") {
     const sectionData = ASSESSMENT_DATA[key] || [];
@@ -1082,18 +1085,32 @@ function validateSection(key) {
     if (evalResult.allCorrect) return true;
     if (state.forceContinuedSections[key]) return true;
 
-    if (key === getSectionOrder()[state.sectionIndex]) {
+    const sections = getSectionOrder();
+    const failIndex = sections.indexOf(key);
+    const isCurrent = failIndex === state.sectionIndex;
+    if (fromAllSections && !isCurrent && failIndex >= 0) {
+      state.sectionIndex = failIndex;
+      saveSession();
+    }
+    if (isCurrent || fromAllSections) {
       state.showTypingHints = true;
       renderSection(false);
     }
+    const forceLabel = isLastSection() ? "Submit anyway" : "Continue anyway";
     if (evalResult.canForceContinue) {
+      const prefix = fromAllSections && !isCurrent
+        ? `${SECTION_LABELS[key]}: `
+        : "";
       showToast(
-        `Section accuracy is ${evalResult.averageSimilarity}%. Use "${isLastSection() ? "Submit anyway" : "Continue anyway"}" to proceed.`,
+        `${prefix}Section accuracy is ${evalResult.averageSimilarity}%. Use "${forceLabel}" to proceed.`,
         "error"
       );
     } else {
+      const prefix = fromAllSections && !isCurrent
+        ? `${SECTION_LABELS[key]}: `
+        : "";
       showToast(
-        `Fix the highlighted words. Section accuracy is ${evalResult.averageSimilarity}% (need ${evalResult.threshold}% to continue anyway).`,
+        `${prefix}Fix the highlighted words. Section accuracy is ${evalResult.averageSimilarity}% (need ${evalResult.threshold}% to continue anyway).`,
         "error"
       );
     }
@@ -1105,7 +1122,7 @@ function validateSection(key) {
 function validateAllSections() {
   const sections = getSectionOrder();
   for (const key of sections) {
-    if (!validateSection(key)) {
+    if (!validateSection(key, { fromAllSections: true })) {
       return false;
     }
   }
@@ -1124,14 +1141,56 @@ function validateCurrentSection() {
   return ok;
 }
 
-function nextSection() {
+async function nextSection() {
   if (!validateCurrentSection()) return;
   const sections = getSectionOrder();
+  const currentKey = sections[state.sectionIndex];
+
+  if (currentKey === "guidelinesMcq" && !state.guidelinesSubmitted) {
+    const guidelinesBtn = document.getElementById("guidelinesNextBtn");
+    if (guidelinesBtn) {
+      guidelinesBtn.disabled = true;
+      guidelinesBtn.textContent = "Saving…";
+    }
+    const saved = await submitGuidelinesMcq();
+    if (guidelinesBtn) {
+      guidelinesBtn.disabled = false;
+      guidelinesBtn.textContent = "Next →";
+    }
+    if (!saved) return;
+  }
+
   if (state.sectionIndex < sections.length - 1) {
     state.showTypingHints = false;
     state.sectionIndex++;
     saveSession();
     renderSection(true);
+  }
+}
+
+async function submitGuidelinesMcq() {
+  try {
+    const w = ASSESSMENT_DATA.weights;
+    const guidelinesMcqDetail = scoreMcqSection("guidelinesMcq", w.guidelinesMcqPerItem || 2.5);
+    const guidelinesMcqScore = guidelinesMcqDetail.reduce((s, x) => s + x.points, 0);
+    const payload = {
+      type: "assessment_guidelines",
+      name: state.name,
+      email: state.email,
+      guidelinesMcqScore,
+      guidelinesMcq: guidelinesMcqDetail,
+      submittedAt: new Date().toISOString(),
+      sessionStartedAt: state.startedAt || ""
+    };
+    await sendToSheets(payload);
+    state.guidelinesSubmitted = true;
+    saveSession();
+    showToast("Guidelines answers saved.", "success");
+    return true;
+  } catch (err) {
+    console.error(err);
+    showToast("Could not save guidelines. Please try again.", "error");
+    return false;
   }
 }
 
@@ -1480,7 +1539,8 @@ async function startSession() {
       startedAt: new Date().toISOString(),
       sessionStartTime: Date.now(),
       showTypingHints: false,
-      forceContinuedSections: { mcqB: false, transcribe: false }
+      forceContinuedSections: { mcqB: false, transcribe: false },
+      guidelinesSubmitted: false
     };
     document.getElementById("headerName").textContent = user.name;
     document.getElementById("headerEmail").textContent = user.email;
@@ -1534,7 +1594,8 @@ async function resumeSession(session) {
     startedAt: session.startedAt || new Date().toISOString(),
     sessionStartTime: session.sessionStartTime || Date.now(),
     showTypingHints: false,
-    forceContinuedSections: session.forceContinuedSections || { mcqB: false, transcribe: false }
+    forceContinuedSections: session.forceContinuedSections || { mcqB: false, transcribe: false },
+    guidelinesSubmitted: !!session.guidelinesSubmitted
   };
   ensureShuffleOrders();
   state.sectionIndex = Math.min(
@@ -1562,7 +1623,8 @@ function endSession(skipConfirm) {
     answers: { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
     startedAt: null, sessionStartTime: null,
     showTypingHints: false,
-    forceContinuedSections: { mcqB: false, transcribe: false }
+    forceContinuedSections: { mcqB: false, transcribe: false },
+    guidelinesSubmitted: false
   };
   hideTypingHints();
   setWorkspaceHintsMode(false);

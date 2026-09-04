@@ -1,24 +1,16 @@
 /**
- * Argos Training — Google Sheets receiver (v9)
+ * Argos Training — Google Sheets receiver (v18)
  *
- * New in v14 (additive):
- *  - Assessment submissions (data.type === "assessment") append to shared
- *    "Assessment" sheet. Existing per-user practice path is unchanged.
+ * POST routes (data.type / data.action):
+ *  - Practice clips (default) — per-user sheet + summary totals
+ *  - assessment — full assessment row on shared "Assessment" sheet
+ *  - assessment_guidelines — early guidelines MCQ row on "GuidelinesMcq" sheet
+ *  - action: admin_* / check_user — sheet-backed user allowlist (Users tab)
  *
- * New in v8:
- *  - "Incorrect Text" and "Original Text" columns (after Written)
- *    for the correction-task flow. Original is never shown in the UI.
- *
- * Carried over from v7:
- *  - Idempotency check: rejects duplicate submissions caused by Apps Script's
- *    302 redirect (which causes doPost to run twice for the same POST).
- *    Uses email + clipId + clipStartedAt as the unique key.
- *  - Skipped submissions rejected (never saved to sheet)
- *  - Old skipped rows auto-cleaned on next submission
- *  - "Time on Clip (mm:ss)" column forced to plain text (fixes 12/30/1899 bug)
- *  - Totals values in column B with correct number formats
- *  - "SKIPPED CLIPS" removed from totals block
- *  - Efficient clearing (only clears used range + buffer)
+ * Practice sheet behaviour:
+ *  - Idempotent clip submissions (email + clipId + clipStartedAt)
+ *  - Skipped submissions ignored; correction columns (Incorrect / Original Text)
+ *  - Totals block with mm:ss time column as plain text
  */
 
 const HEADERS = [
@@ -68,6 +60,11 @@ function doPost(e) {
     // User admin API (sheet-backed allowlist)
     if (data.action) {
       return handleUserAdminPost(data);
+    }
+
+    // Guidelines MCQ — saved when user completes first section (before rest of assessment)
+    if (data.type === "assessment_guidelines") {
+      return handleGuidelinesMcqPost(data);
     }
 
     // Assessment flow — shared sheet, append-only (does not touch per-user sheets)
@@ -468,6 +465,92 @@ function buildAssessmentRow(data) {
     data.submittedAt || "",
     data.guidelinesMcqScore != null ? data.guidelinesMcqScore : "",
     JSON.stringify(data.guidelinesMcq || [])
+  ];
+}
+
+const GUIDELINES_MCQ_SHEET_NAME = "GuidelinesMcq";
+
+const GUIDELINES_MCQ_HEADERS = [
+  "Timestamp",
+  "Name",
+  "Email",
+  "GuidelinesMcqScore",
+  "GuidelinesMcqDetail",
+  "SubmittedAt",
+  "SessionStartedAt"
+];
+
+function handleGuidelinesMcqPost(data) {
+  try {
+    const sheet = getOrCreateGuidelinesMcqSheet();
+    ensureGuidelinesMcqHeaders(sheet);
+
+    if (isDuplicateGuidelinesMcq(sheet, data)) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, ignored: "duplicate" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    sheet.appendRow(buildGuidelinesMcqRow(data));
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: err.toString() }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getOrCreateGuidelinesMcqSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(GUIDELINES_MCQ_SHEET_NAME);
+  if (!sheet) sheet = ss.insertSheet(GUIDELINES_MCQ_SHEET_NAME);
+  return sheet;
+}
+
+function ensureGuidelinesMcqHeaders(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(GUIDELINES_MCQ_HEADERS);
+    sheet.getRange(1, 1, 1, GUIDELINES_MCQ_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    return;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  GUIDELINES_MCQ_HEADERS.forEach((header, i) => {
+    if (existing[i] !== header) {
+      sheet.getRange(1, i + 1).setValue(header).setFontWeight("bold");
+    }
+  });
+  sheet.setFrozenRows(1);
+}
+
+function isDuplicateGuidelinesMcq(sheet, data) {
+  const email = String(data.email || "").trim();
+  const sessionStartedAt = String(data.sessionStartedAt || "").trim();
+  if (!email || !sessionStartedAt) return false;
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+
+  const values = sheet.getRange(2, 1, lastRow, GUIDELINES_MCQ_HEADERS.length).getValues();
+  return values.some(r =>
+    String(r[2] || "").trim() === email &&
+    String(r[6] || "").trim() === sessionStartedAt
+  );
+}
+
+function buildGuidelinesMcqRow(data) {
+  return [
+    data.timestamp || new Date().toISOString(),
+    data.name || "",
+    data.email || "",
+    data.guidelinesMcqScore != null ? data.guidelinesMcqScore : "",
+    JSON.stringify(data.guidelinesMcq || []),
+    data.submittedAt || "",
+    data.sessionStartedAt || ""
   ];
 }
 
