@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Argos Training — Submissions & Reports</title>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --primary: #0d9488;
+    --primary-hover: #0f766e;
+    --primary-soft: #ccfbf1;
+    --danger: #dc2626;
+    --success: #16a34a;
+    --radius: 10px;
+    --shadow-sm: 0 1px 2px rgba(15,23,42,0.04);
+    --shadow-md: 0 4px 12px rgba(15,23,42,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .hidden { display: none !important; }
+
+  /* Login screen */
+  .login-screen {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #f0fdfa 0%, #f8fafc 100%);
+  }
+  .login-card {
+    background: white; border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px; box-shadow: 0 20px 60px rgba(15,23,42,0.08);
+    max-width: 420px; width: 100%;
+  }
+  .login-logo {
+    width: 52px; height: 52px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+    border-radius: 12px; display: grid; place-items: center;
+    color: white; font-size: 22px; font-weight: bold; margin-bottom: 16px;
+  }
+  .login-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .login-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 20px; }
+  .field { margin-bottom: 16px; }
+  .field-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  input[type="email"], input[type="password"], select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 14px; font-family: inherit; background: white;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(13,148,136,0.12); }
+
+  .btn {
+    padding: 10px 18px; border-radius: 6px; font-size: 14px; font-weight: 600;
+    border: none; cursor: pointer; text-decoration: none; display: inline-flex;
+    align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-primary { background: var(--primary); color: white; width: 100%; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-secondary { background: white; color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: #f8fafc; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; border-radius: 6px; }
+
+  /* App Header */
+  .app-header {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+    color: white; padding: 14px 24px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 50; box-shadow: var(--shadow-sm);
+  }
+  .app-header h1 { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .brand-badge {
+    background: rgba(255,255,255,0.2); font-size: 12px; padding: 2px 8px; border-radius: 4px; font-weight: 500;
+  }
+  .header-actions { display: flex; align-items: center; gap: 10px; }
+
+  /* Container & Layout */
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  
+  /* User Selection Panel */
+  .user-bar {
+    background: white; border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center;
+    justify-content: space-between; gap: 16px; flex-wrap: wrap; box-shadow: var(--shadow-sm);
+  }
+  .user-select-group { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 280px; }
+  .user-select-group label { font-size: 13px; font-weight: 700; color: var(--text); white-space: nowrap; }
+  .user-select-group select { max-width: 380px; }
+  .user-meta-pill {
+    background: #f1f5f9; padding: 6px 14px; border-radius: 20px; font-size: 13px;
+    color: var(--text); display: flex; align-items: center; gap: 8px;
+  }
+  .user-meta-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); }
+
+  /* Tabs Bar */
+  .tabs-bar {
+    display: flex; background: white; border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; margin-bottom: 20px; box-shadow: var(--shadow-sm);
+  }
+  .tab-btn {
+    flex: 1; padding: 14px 20px; border: none; background: transparent; font-size: 14px; font-weight: 600;
+    color: var(--text-muted); cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .tab-btn:hover { background: #f8fafc; color: var(--text); }
+  .tab-btn.active {
+    color: var(--primary); border-bottom-color: var(--primary); background: #f0fdfa;
+  }
+  .tab-badge {
+    background: #e2e8f0; color: #475569; font-size: 12px; padding: 2px 8px; border-radius: 999px; font-weight: 700;
+  }
+  .tab-btn.active .tab-badge {
+    background: #ccfbf1; color: var(--primary-hover);
+  }
+
+  /* Attempt Selector Bar */
+  .attempt-bar {
+    display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px;
+    padding: 14px 18px; background: white; border: 1px solid var(--border); border-radius: 8px;
+    flex-wrap: wrap; box-shadow: var(--shadow-sm);
+  }
+  .attempt-bar-label { font-size: 13px; font-weight: 700; color: var(--text); }
+  .attempt-select {
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px;
+    background: white; font-weight: 500; min-width: 320px; max-width: 100%;
+  }
+
+  /* Score Summary Cards */
+  .score-summary-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 24px;
+  }
+  .score-box {
+    background: white; border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+    text-align: center; box-shadow: var(--shadow-sm);
+  }
+  .score-box.highlight {
+    background: #f0fdfa; border-color: #99f6e4;
+  }
+  .score-box-num {
+    font-size: 26px; font-weight: 800; color: var(--text); line-height: 1.2;
+  }
+  .score-box.highlight .score-box-num {
+    color: var(--primary);
+  }
+  .score-box-lbl {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-top: 6px; letter-spacing: 0.04em;
+  }
+
+  /* Detailed Feedback Sections */
+  .feedback-panel { text-align: left; display: grid; gap: 20px; margin-bottom: 40px; }
+  .feedback-section {
+    border: 1px solid var(--border); border-radius: 12px; padding: 20px; background: white;
+    box-shadow: var(--shadow-sm);
+  }
+  .feedback-section h3 {
+    font-size: 15px; font-weight: 700; margin-bottom: 14px; color: var(--text);
+    display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; padding-bottom: 10px;
+  }
+  .feedback-item {
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; background: #f8fafc; margin-bottom: 12px;
+  }
+  .feedback-item:last-child { margin-bottom: 0; }
+  .feedback-item-head {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
+  }
+  .feedback-item-head strong { font-size: 14px; color: var(--text); }
+  .feedback-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; }
+  .feedback-badge.ok { background: #dcfce7; color: #166534; }
+  .feedback-badge.bad { background: #fee2e2; color: #991b1b; }
+  .feedback-label {
+    font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.03em; margin: 10px 0 4px;
+  }
+  .feedback-label:first-of-type { margin-top: 0; }
+  .feedback-text {
+    font-size: 13.5px; line-height: 1.6; word-break: break-word; white-space: pre-wrap;
+    background: white; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px;
+  }
+  .diff-ok { color: #15803d; }
+  .diff-bad { color: #dc2626; font-weight: 600; }
+  .diff-miss { color: #ca8a04; font-weight: 600; background: #fef9c3; border-radius: 2px; }
+  .diff-legend {
+    font-size: 12px; color: var(--text-muted); margin-bottom: 14px; display: flex; gap: 16px; flex-wrap: wrap;
+    background: #f8fafc; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);
+  }
+  .empty-report {
+    text-align: center; padding: 60px 20px; color: var(--text-muted); background: white;
+    border-radius: 12px; border: 1px dashed var(--border);
+  }
+  .empty-report h4 { font-size: 16px; color: var(--text); margin-bottom: 8px; }
+
+  /* Animated Loaders */
+  .loader-card {
+    text-align: center; padding: 60px 20px; background: white; border-radius: 12px;
+    border: 1px solid var(--border); box-shadow: var(--shadow-sm); display: flex;
+    flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    animation: fadeIn 0.2s ease-in;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .spinner {
+    width: 38px; height: 38px; border: 3px solid #e2e8f0; border-top-color: var(--primary);
+    border-radius: 50%; animation: spin 0.75s linear infinite;
+  }
+  .spinner-sm {
+    width: 13px; height: 13px; border: 2px solid #cbd5e1; border-top-color: var(--primary);
+    border-radius: 50%; display: inline-block; animation: spin 0.75s linear infinite;
+    vertical-align: middle; margin-right: 4px;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .loader-card h4 { font-size: 15px; font-weight: 700; color: var(--text); margin: 0; }
+  .loader-card p { font-size: 13px; color: var(--text-muted); margin: 0; }
+
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; padding: 12px 18px;
+    background: #0f172a; color: white; border-radius: 8px; font-size: 13px;
+    opacity: 0; transform: translateY(8px); transition: all 0.2s; pointer-events: none; z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { background: var(--danger); }
+  .toast.success { background: var(--success); }
+</style>
+</head>
+<body>
+
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-logo">◈</div>
+    <div class="login-title">Admin Reports</div>
+    <div class="login-sub">Sign in with your admin credentials to view assessment submissions.</div>
+    <div class="field">
+      <label class="field-label" for="adminEmail">Admin email</label>
+      <input type="email" id="adminEmail" placeholder="admin@example.com" autocomplete="username" />
+    </div>
+    <div class="field">
+      <label class="field-label" for="adminPassword">Password</label>
+      <input type="password" id="adminPassword" placeholder="Password" autocomplete="current-password" />
+    </div>
+    <button class="btn btn-primary" id="loginBtn" onclick="adminLogin()">Sign in</button>
+  </div>
+</div>
+
+<div id="dashboard" class="hidden">
+  <header class="app-header">
+    <h1>
+      <span>◈ Argos Training</span>
+      <span class="brand-badge">Submissions & Reports</span>
+    </h1>
+    <div class="header-actions">
+      <a href="admin.html" class="btn btn-secondary btn-sm">← User Admin</a>
+      <button class="btn btn-secondary btn-sm" onclick="adminLogout()">Log out</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- User Selection Bar -->
+    <div class="user-bar">
+      <div class="user-select-group">
+        <label for="userSelect">Select Trainee:</label>
+        <select id="userSelect" onchange="onUserSelected(this.value)">
+          <option value="">Loading trainees...</option>
+        </select>
+      </div>
+      <div class="user-meta-pill" id="userMetaPill">
+        <span id="selectedUserEmail"><span class="spinner-sm"></span> Loading trainees...</span>
+      </div>
+    </div>
+
+    <!-- Two Navigation Tabs: Assessment (Default) & Guidelines MCQ -->
+    <div class="tabs-bar">
+      <button type="button" class="tab-btn active" id="tabBtnAssessment" onclick="switchReportTab('assessment')">
+        <span>Assessment Submissions</span>
+        <span class="tab-badge" id="assessmentCountBadge">…</span>
+      </button>
+      <button type="button" class="tab-btn" id="tabBtnGuidelines" onclick="switchReportTab('guidelines')">
+        <span>Guidelines MCQ Submissions</span>
+        <span class="tab-badge" id="guidelinesCountBadge">…</span>
+      </button>
+    </div>
+
+    <!-- Tab 1 Content: Assessment -->
+    <div id="tabContentAssessment">
+      <div id="assessmentViewArea">
+        <div class="loader-card">
+          <div class="spinner"></div>
+          <h4>Loading Trainees &amp; Submissions...</h4>
+          <p>Connecting to Google Sheets to retrieve registered trainees...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2 Content: Guidelines MCQ -->
+    <div id="tabContentGuidelines" class="hidden">
+      <div id="guidelinesViewArea">
+        <div class="loader-card">
+          <div class="spinner"></div>
+          <h4>Loading Guidelines MCQ Submissions...</h4>
+          <p>Connecting to Google Sheets to retrieve registered trainees...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="assessment-data.js"></script>
+<script>
+const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syftzSIkPvsKvOTiYO9VeUNSUg7LLDNOH6_4Le8T5X419Ayb8oSiLDli/exec";
+const ADMIN_TOKEN_KEY = "argos_admin_token";
+const ADMIN_TOKEN_EXP_KEY = "argos_admin_token_exp";
+
+let usersList = [];
+let currentEmail = "";
+let currentReportsData = { assessments: [], guidelines: [] };
+let selectedAssessmentIndex = 0;
+let selectedGuidelinesIndex = 0;
+let currentActiveTab = "assessment";
+
+function showToast(msg, type) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "toast show " + (type || "");
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => { t.className = "toast"; }, 2600);
+}
+
+function getAdminToken() {
+  const token = sessionStorage.getItem(ADMIN_TOKEN_KEY);
+  const exp = Number(sessionStorage.getItem(ADMIN_TOKEN_EXP_KEY) || 0);
+  if (!token || !exp || Date.now() > exp) {
+    clearAdminSession();
+    return null;
+  }
+  return token;
+}
+
+function setAdminSession(token, expiresInSec) {
+  sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+  sessionStorage.setItem(ADMIN_TOKEN_EXP_KEY, String(Date.now() + (expiresInSec * 1000)));
+}
+
+function clearAdminSession() {
+  sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+  sessionStorage.removeItem(ADMIN_TOKEN_EXP_KEY);
+}
+
+async function apiPost(payload) {
+  const res = await fetch(SHEETS_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error("Request failed.");
+  const data = await res.json();
+  if (!data || data.ok !== true) throw new Error((data && data.message) || "Request failed.");
+  return data;
+}
+
+async function apiGetUsers(token) {
+  const url = SHEETS_ENDPOINT + "?action=admin_users&token=" + encodeURIComponent(token);
+  const res = await fetch(url, { method: "GET" });
+  if (!res.ok) throw new Error("Could not load users.");
+  const data = await res.json();
+  if (!data || data.ok !== true) throw new Error((data && data.message) || "Could not load users.");
+  return data.users || [];
+}
+
+async function apiGetSubmissions(token, email) {
+  const url = SHEETS_ENDPOINT + "?action=admin_submissions&token=" + encodeURIComponent(token) + "&email=" + encodeURIComponent(email);
+  const res = await fetch(url, { method: "GET" });
+  if (!res.ok) throw new Error("Could not load submissions.");
+  const data = await res.json();
+  if (!data || data.ok !== true) throw new Error((data && data.message) || "Could not load submissions.");
+  return data;
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatDateTime(isoOrStr) {
+  if (!isoOrStr) return "—";
+  try {
+    const d = new Date(isoOrStr);
+    if (isNaN(d.getTime())) return String(isoOrStr);
+    return d.toLocaleString(undefined, {
+      month: "short", day: "numeric", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+  } catch (_) {
+    return String(isoOrStr);
+  }
+}
+
+function formatDurationSec(sec) {
+  const s = Number(sec);
+  if (!s || isNaN(s) || s <= 0) return "—";
+  const m = Math.floor(s / 60);
+  const remS = s % 60;
+  if (m === 0) return `${remS}s`;
+  return `${m}m ${remS}s`;
+}
+
+function tokenizeWords(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function lcsTable(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+      else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp;
+}
+
+function wordDiffMatches(answerTokens, correctTokens) {
+  const aNorm = answerTokens.map((t) => t.toLowerCase());
+  const cNorm = correctTokens.map((t) => t.toLowerCase());
+  const dp = lcsTable(aNorm, cNorm);
+  const matchedA = new Array(answerTokens.length).fill(false);
+  const matchedC = new Array(correctTokens.length).fill(false);
+  let i = answerTokens.length, j = correctTokens.length;
+  while (i > 0 && j > 0) {
+    if (aNorm[i - 1] === cNorm[j - 1]) {
+      matchedA[i - 1] = true;
+      matchedC[j - 1] = true;
+      i--;
+      j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+  return { matchedA, matchedC };
+}
+
+function renderTypedDiff(answer, correct) {
+  const aToks = tokenizeWords(answer);
+  const cToks = tokenizeWords(correct);
+
+  if (!aToks.length && !cToks.length) {
+    return { answerHtml: '<span class="diff-ok">(empty)</span>', correctHtml: '<span class="diff-ok">(empty)</span>' };
+  }
+  if (!aToks.length) {
+    return {
+      answerHtml: '<span class="diff-bad">(no answer)</span>',
+      correctHtml: cToks.map((tok) => `<span class="diff-miss">${escapeHtml(tok)}</span>`).join(" ")
+    };
+  }
+  if (!cToks.length) {
+    return {
+      answerHtml: aToks.map((tok) => `<span class="diff-bad">${escapeHtml(tok)}</span>`).join(" "),
+      correctHtml: '<span class="diff-miss">(no gold text)</span>'
+    };
+  }
+
+  const { matchedA, matchedC } = wordDiffMatches(aToks, cToks);
+
+  const answerHtml = aToks.map((tok, idx) => {
+    const cls = matchedA[idx] ? "diff-ok" : "diff-bad";
+    return `<span class="${cls}">${escapeHtml(tok)}</span>`;
+  }).join(" ");
+
+  const correctHtml = cToks.map((tok, idx) => {
+    const cls = matchedC[idx] ? "diff-ok" : "diff-miss";
+    return `<span class="${cls}">${escapeHtml(tok)}</span>`;
+  }).join(" ");
+
+  return { answerHtml, correctHtml };
+}
+
+function feedbackBadge(ok) {
+  return ok
+    ? '<span class="feedback-badge ok">Correct</span>'
+    : '<span class="feedback-badge bad">Incorrect</span>';
+}
+
+function getGuidelinesQuestionMeta(questionId) {
+  const data = window.ASSESSMENT_DATA_EMBEDDED || {};
+  const list = Array.isArray(data.guidelinesMcq) ? data.guidelinesMcq : [];
+  return list.find((q) => q.id === questionId) || null;
+}
+
+function showLogin() {
+  document.getElementById("loginScreen").classList.remove("hidden");
+  document.getElementById("dashboard").classList.add("hidden");
+}
+
+function showDashboard() {
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+}
+
+async function adminLogin() {
+  const email = document.getElementById("adminEmail").value.trim();
+  const password = document.getElementById("adminPassword").value;
+  const btn = document.getElementById("loginBtn");
+
+  if (!email || !email.includes("@")) {
+    showToast("Please enter a valid admin email.", "error");
+    return;
+  }
+  if (!password) {
+    showToast("Please enter your password.", "error");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Signing in...";
+  try {
+    const data = await apiPost({ action: "admin_login", email, password });
+    setAdminSession(data.token, data.expiresIn || 7200);
+    document.getElementById("adminPassword").value = "";
+    showDashboard();
+    await initDashboard();
+    showToast("Signed in successfully.", "success");
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Sign in failed.", "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Sign in";
+  }
+}
+
+function adminLogout() {
+  clearAdminSession();
+  showLogin();
+  showToast("Logged out.", "success");
+}
+
+function renderInitialLoader(title, subtitle) {
+  return `
+    <div class="loader-card">
+      <div class="spinner"></div>
+      <h4>${escapeHtml(title || "Loading...")}</h4>
+      <p>${escapeHtml(subtitle || "Connecting to Google Sheets...")}</p>
+    </div>
+  `;
+}
+
+async function initDashboard() {
+  const token = getAdminToken();
+  if (!token) {
+    showLogin();
+    return;
+  }
+
+  document.getElementById("assessmentViewArea").innerHTML = renderInitialLoader(
+    "Loading Trainees & Submissions...",
+    "Connecting to Google Sheets to retrieve registered trainees..."
+  );
+  document.getElementById("guidelinesViewArea").innerHTML = renderInitialLoader(
+    "Loading Guidelines MCQ Submissions...",
+    "Connecting to Google Sheets to retrieve registered trainees..."
+  );
+
+  try {
+    usersList = await apiGetUsers(token);
+    usersList.sort((a, b) => {
+      const nameA = String(a.name || a.email || "").trim().toLowerCase();
+      const nameB = String(b.name || b.email || "").trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+    const select = document.getElementById("userSelect");
+
+    if (!usersList.length) {
+      select.innerHTML = '<option value="">No registered users found</option>';
+      document.getElementById("assessmentViewArea").innerHTML = '<div class="empty-report"><h4>No Registered Users Found</h4><p>Add trainees via the User Admin panel first.</p></div>';
+      document.getElementById("guidelinesViewArea").innerHTML = '<div class="empty-report"><h4>No Registered Users Found</h4><p>Add trainees via the User Admin panel first.</p></div>';
+      return;
+    }
+
+    select.innerHTML = usersList.map((u) => `
+      <option value="${escapeHtml(u.email)}">${escapeHtml(u.name || u.email)} (${escapeHtml(u.email)})</option>
+    `).join("");
+
+    // Read query parameter email if passed
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramEmail = (urlParams.get("email") || "").trim().toLowerCase();
+
+    let targetEmail = usersList[0].email;
+    if (paramEmail && usersList.some((u) => u.email.toLowerCase() === paramEmail)) {
+      targetEmail = paramEmail;
+    }
+
+    select.value = targetEmail;
+    await loadUserSubmissions(targetEmail);
+  } catch (err) {
+    console.error(err);
+    if (String(err.message || "").toLowerCase().includes("unauthorized")) {
+      clearAdminSession();
+      showLogin();
+      showToast("Session expired. Please sign in again.", "error");
+      return;
+    }
+    showToast(err.message || "Could not load users.", "error");
+    document.getElementById("assessmentViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading users</h4><p>${escapeHtml(err.message)}</p></div>`;
+    document.getElementById("guidelinesViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading users</h4><p>${escapeHtml(err.message)}</p></div>`;
+  }
+}
+
+async function onUserSelected(email) {
+  if (!email) return;
+  const url = new URL(window.location);
+  url.searchParams.set("email", email);
+  window.history.replaceState({}, "", url);
+  await loadUserSubmissions(email);
+}
+
+async function loadUserSubmissions(email) {
+  const token = getAdminToken();
+  if (!token) {
+    showLogin();
+    return;
+  }
+
+  currentEmail = email;
+  selectedAssessmentIndex = 0;
+  selectedGuidelinesIndex = 0;
+
+  const foundUser = usersList.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  const displayName = foundUser ? `${foundUser.name} · ${foundUser.email}` : email;
+  const userSelect = document.getElementById("userSelect");
+  if (userSelect) userSelect.disabled = true;
+
+  document.getElementById("selectedUserEmail").innerHTML = '<span class="spinner-sm"></span> Loading submissions...';
+  document.getElementById("assessmentCountBadge").textContent = "…";
+  document.getElementById("guidelinesCountBadge").textContent = "…";
+  document.getElementById("assessmentViewArea").innerHTML = renderInitialLoader(
+    "Loading Assessment Submissions...",
+    `Retrieving test attempts for ${displayName}`
+  );
+  document.getElementById("guidelinesViewArea").innerHTML = renderInitialLoader(
+    "Loading Guidelines Submissions...",
+    `Retrieving quiz attempts for ${displayName}`
+  );
+
+  try {
+    const data = await apiGetSubmissions(token, email);
+    currentReportsData = {
+      assessments: Array.isArray(data.assessments) ? data.assessments : [],
+      guidelines: Array.isArray(data.guidelines) ? data.guidelines : []
+    };
+
+    document.getElementById("assessmentCountBadge").textContent = currentReportsData.assessments.length;
+    document.getElementById("guidelinesCountBadge").textContent = currentReportsData.guidelines.length;
+
+    renderAssessmentTab();
+    renderGuidelinesTab();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not load submissions.", "error");
+    document.getElementById("assessmentViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading submissions</h4><p>${escapeHtml(err.message)}</p></div>`;
+    document.getElementById("guidelinesViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading submissions</h4><p>${escapeHtml(err.message)}</p></div>`;
+  } finally {
+    if (userSelect) userSelect.disabled = false;
+    document.getElementById("selectedUserEmail").innerHTML = `<span class="dot"></span> ${escapeHtml(displayName)}`;
+  }
+}
+
+function switchReportTab(tab) {
+  currentActiveTab = tab;
+  const isAssessment = tab === "assessment";
+
+  document.getElementById("tabBtnAssessment").classList.toggle("active", isAssessment);
+  document.getElementById("tabBtnGuidelines").classList.toggle("active", !isAssessment);
+
+  document.getElementById("tabContentAssessment").classList.toggle("hidden", !isAssessment);
+  document.getElementById("tabContentGuidelines").classList.toggle("hidden", isAssessment);
+}
+
+function changeAssessmentAttempt(index) {
+  selectedAssessmentIndex = Number(index);
+  renderAssessmentTab();
+}
+
+function changeGuidelinesAttempt(index) {
+  selectedGuidelinesIndex = Number(index);
+  renderGuidelinesTab();
+}
+
+function renderAssessmentTab() {
+  const area = document.getElementById("assessmentViewArea");
+  const list = currentReportsData.assessments || [];
+  if (!list.length) {
+    area.innerHTML = `
+      <div class="empty-report">
+        <h4>No Assessment Submissions Found</h4>
+        <p>This trainee has not submitted any full assessments yet.</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (selectedAssessmentIndex < 0 || selectedAssessmentIndex >= list.length) {
+    selectedAssessmentIndex = 0;
+  }
+
+  const attempt = list[selectedAssessmentIndex];
+  const totalAttempts = list.length;
+
+  const attemptSelectHtml = totalAttempts > 1 ? `
+    <div class="attempt-bar">
+      <div class="attempt-bar-label">
+        Select Attempt (${totalAttempts} total attempts in desc order):
+      </div>
+      <select class="attempt-select" onchange="changeAssessmentAttempt(this.value)">
+        ${list.map((item, idx) => {
+          const attemptNum = totalAttempts - idx;
+          const isLatest = idx === 0 ? " (Latest)" : "";
+          const dateStr = formatDateTime(item.submittedAt || item.timestamp);
+          const scoreStr = item.overallScore != null ? ` · Score: ${item.overallScore}%` : "";
+          return `<option value="${idx}" ${idx === selectedAssessmentIndex ? "selected" : ""}>
+            Attempt ${attemptNum}${isLatest} — ${dateStr}${scoreStr}
+          </option>`;
+        }).join("")}
+      </select>
+    </div>
+  ` : `
+    <div class="attempt-bar">
+      <div class="attempt-bar-label">
+        Attempt 1 (Only submission) — ${formatDateTime(attempt.submittedAt || attempt.timestamp)}
+      </div>
+    </div>
+  `;
+
+  const overallScoreHtml = attempt.overallScore != null ? `${attempt.overallScore}%` : "—";
+  const mcqAScoreHtml = attempt.mcqAScore != null ? `${attempt.mcqAScore} pts` : "—";
+  const mcqBScoreHtml = attempt.mcqBScore != null ? `${attempt.mcqBScore} pts` : "—";
+  const trScoreHtml = attempt.transcribeScore != null ? `${attempt.transcribeScore} pts` : "—";
+  const durationHtml = formatDurationSec(attempt.sessionElapsedSec);
+
+  const scoresGridHtml = `
+    <div class="score-summary-grid">
+      <div class="score-box highlight">
+        <div class="score-box-num">${overallScoreHtml}</div>
+        <div class="score-box-lbl">Overall Score</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-num">${mcqAScoreHtml}</div>
+        <div class="score-box-lbl">MCQ Section A</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-num">${mcqBScoreHtml}</div>
+        <div class="score-box-lbl">MCQ Section B</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-num">${trScoreHtml}</div>
+        <div class="score-box-lbl">Transcribe</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-num">${durationHtml}</div>
+        <div class="score-box-lbl">Duration</div>
+      </div>
+    </div>
+  `;
+
+  // 1. Guidelines MCQ in assessment (if saved)
+  let guidelinesSectionHtml = "";
+  const gList = Array.isArray(attempt.guidelinesMcqDetail) ? attempt.guidelinesMcqDetail : [];
+  if (gList.length) {
+    guidelinesSectionHtml = `
+      <div class="feedback-section">
+        <h3>
+          <span>Guidelines Comprehension</span>
+          <span style="font-size:12px;font-weight:normal;color:var(--text-muted);">${attempt.guidelinesMcqScore != null ? attempt.guidelinesMcqScore + " pts" : ""}</span>
+        </h3>
+        ${gList.map((d, i) => {
+          const qId = d.questionId || d.id || "";
+          const meta = getGuidelinesQuestionMeta(qId);
+          const questionText = (meta && meta.question) || d.question || qId;
+          const sectionTopic = (meta && meta.section) || d.section || "";
+          let traineeAnswer = d.answer || "";
+          let correctAnswer = d.correctAnswer || "";
+
+          if (meta && meta.options) {
+            if (d.selected && meta.options[d.selected]) {
+              traineeAnswer = meta.options[d.selected];
+            } else if (!traineeAnswer && d.selected) {
+              traineeAnswer = d.selected;
+            }
+            if (meta.correctKey && meta.options[meta.correctKey]) {
+              correctAnswer = meta.options[meta.correctKey];
+            }
+          }
+
+          return `
+          <div class="feedback-item">
+            <div class="feedback-item-head">
+              <strong>Question ${d.displayNumber || (i + 1)} ${qId ? `(${escapeHtml(qId)})` : ""}</strong>
+              ${feedbackBadge(!!d.isCorrect)}
+            </div>
+            ${sectionTopic ? `<div class="feedback-label">Topic</div><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${escapeHtml(sectionTopic)}</div>` : ""}
+            <div class="feedback-label">Question</div>
+            <div style="font-size:13px;margin-bottom:8px;line-height:1.5;">${escapeHtml(questionText)}</div>
+            <div class="feedback-label">Trainee Answer</div>
+            <div class="feedback-text">${escapeHtml(traineeAnswer || "(none)")}</div>
+            <div class="feedback-label">Correct Answer</div>
+            <div class="feedback-text">${escapeHtml(correctAnswer || "")}</div>
+          </div>
+        `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  // 2. MCQ Section A
+  let mcqASectionHtml = "";
+  const aList = Array.isArray(attempt.mcqADetail) ? attempt.mcqADetail : [];
+  if (aList.length) {
+    mcqASectionHtml = `
+      <div class="feedback-section">
+        <h3>
+          <span>Choose the correct option (MCQ A)</span>
+          <span style="font-size:12px;font-weight:normal;color:var(--text-muted);">${attempt.mcqAScore != null ? attempt.mcqAScore + " pts" : ""}</span>
+        </h3>
+        ${aList.map((d, i) => `
+          <div class="feedback-item">
+            <div class="feedback-item-head">
+              <strong>Clip ${i + 1}: ${escapeHtml(d.clipId || "")}</strong>
+              ${feedbackBadge(!!d.isCorrect)}
+            </div>
+            <div class="feedback-label">Trainee Selected</div>
+            <div class="feedback-text">${escapeHtml(d.answer || "(none)")}</div>
+            <div class="feedback-label">Correct Option</div>
+            <div class="feedback-text">${escapeHtml(d.correctAnswer || "")}</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  // 3. MCQ Section B (Editing given transcription)
+  let mcqBSectionHtml = "";
+  const bList = Array.isArray(attempt.mcqBDetail) ? attempt.mcqBDetail : [];
+  if (bList.length) {
+    mcqBSectionHtml = `
+      <div class="feedback-section">
+        <h3>
+          <span>Correct the given transcription (MCQ B)</span>
+          <span style="font-size:12px;font-weight:normal;color:var(--text-muted);">${attempt.mcqBScore != null ? attempt.mcqBScore + " pts" : ""}</span>
+        </h3>
+        <div class="diff-legend">
+          <span><span class="diff-ok">● Green</span> = matched</span>
+          <span><span class="diff-bad">● Red</span> = wrong or extra</span>
+          <span><span class="diff-miss" style="padding:1px 4px;">● Yellow</span> = missing (shown on correct)</span>
+        </div>
+        ${bList.map((d, i) => {
+          const answer = d.answer || "";
+          const correct = d.correct || "";
+          const exact = answer.trim().toLowerCase() === correct.trim().toLowerCase();
+          const diff = renderTypedDiff(answer, correct);
+          return `
+            <div class="feedback-item">
+              <div class="feedback-item-head">
+                <strong>Clip ${i + 1}: ${escapeHtml(d.clipId || "")} ${d.similarity != null ? `(${d.similarity}% match)` : ""}</strong>
+                ${feedbackBadge(exact)}
+              </div>
+              <div class="feedback-label">Trainee Answer</div>
+              <div class="feedback-text">${diff.answerHtml}</div>
+              <div class="feedback-label">Correct Gold Standard</div>
+              <div class="feedback-text">${diff.correctHtml}</div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  // 4. Transcribe Section
+  let trSectionHtml = "";
+  const tList = Array.isArray(attempt.transcribeDetail) ? attempt.transcribeDetail : [];
+  if (tList.length) {
+    trSectionHtml = `
+      <div class="feedback-section">
+        <h3>
+          <span>Transcribe the audios</span>
+          <span style="font-size:12px;font-weight:normal;color:var(--text-muted);">${attempt.transcribeScore != null ? attempt.transcribeScore + " pts" : ""}</span>
+        </h3>
+        <div class="diff-legend">
+          <span><span class="diff-ok">● Green</span> = matched</span>
+          <span><span class="diff-bad">● Red</span> = wrong or extra</span>
+          <span><span class="diff-miss" style="padding:1px 4px;">● Yellow</span> = missing (shown on correct)</span>
+        </div>
+        ${tList.map((d, i) => {
+          const answer = d.answer || "";
+          const gold = d.gold || "";
+          const exact = answer.trim().toLowerCase() === gold.trim().toLowerCase();
+          const diff = renderTypedDiff(answer, gold);
+          return `
+            <div class="feedback-item">
+              <div class="feedback-item-head">
+                <strong>Clip ${i + 1}: ${escapeHtml(d.clipId || "")} ${d.similarity != null ? `(${d.similarity}% match)` : ""}</strong>
+                ${feedbackBadge(exact)}
+              </div>
+              <div class="feedback-label">Trainee Answer</div>
+              <div class="feedback-text">${diff.answerHtml}</div>
+              <div class="feedback-label">Correct Gold Standard</div>
+              <div class="feedback-text">${diff.correctHtml}</div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  area.innerHTML = `
+    ${attemptSelectHtml}
+    ${scoresGridHtml}
+    <div class="feedback-panel">
+      ${guidelinesSectionHtml}
+      ${mcqASectionHtml}
+      ${mcqBSectionHtml}
+      ${trSectionHtml}
+    </div>
+  `;
+}
+
+function renderGuidelinesTab() {
+  const area = document.getElementById("guidelinesViewArea");
+  const list = currentReportsData.guidelines || [];
+  if (!list.length) {
+    area.innerHTML = `
+      <div class="empty-report">
+        <h4>No Guidelines Submissions Found</h4>
+        <p>This trainee has not submitted any Guidelines MCQ attempts yet.</p>
+      </div>
+    `;
+    return;
+  }
+
+  if (selectedGuidelinesIndex < 0 || selectedGuidelinesIndex >= list.length) {
+    selectedGuidelinesIndex = 0;
+  }
+
+  const attempt = list[selectedGuidelinesIndex];
+  const totalAttempts = list.length;
+
+  const attemptSelectHtml = totalAttempts > 1 ? `
+    <div class="attempt-bar">
+      <div class="attempt-bar-label">
+        Select Attempt (${totalAttempts} total attempts in desc order):
+      </div>
+      <select class="attempt-select" onchange="changeGuidelinesAttempt(this.value)">
+        ${list.map((item, idx) => {
+          const attemptNum = totalAttempts - idx;
+          const isLatest = idx === 0 ? " (Latest)" : "";
+          const dateStr = formatDateTime(item.submittedAt || item.timestamp);
+          const scoreStr = item.guidelinesMcqScore != null ? ` · Score: ${item.guidelinesMcqScore} pts` : "";
+          return `<option value="${idx}" ${idx === selectedGuidelinesIndex ? "selected" : ""}>
+            Attempt ${attemptNum}${isLatest} — ${dateStr}${scoreStr}
+          </option>`;
+        }).join("")}
+      </select>
+    </div>
+  ` : `
+    <div class="attempt-bar">
+      <div class="attempt-bar-label">
+        Attempt 1 (Only submission) — ${formatDateTime(attempt.submittedAt || attempt.timestamp)}
+      </div>
+    </div>
+  `;
+
+  const scoreNumHtml = attempt.guidelinesMcqScore != null ? `${attempt.guidelinesMcqScore} pts` : "—";
+  const submittedHtml = formatDateTime(attempt.submittedAt || attempt.timestamp);
+  const startedHtml = formatDateTime(attempt.sessionStartedAt);
+
+  const summaryHtml = `
+    <div class="score-summary-grid">
+      <div class="score-box highlight">
+        <div class="score-box-num">${scoreNumHtml}</div>
+        <div class="score-box-lbl">Guidelines Score</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-num" style="font-size:14px;font-weight:600;padding-top:4px;">${submittedHtml}</div>
+        <div class="score-box-lbl">Submitted At</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-num" style="font-size:14px;font-weight:600;padding-top:4px;">${startedHtml}</div>
+        <div class="score-box-lbl">Session Started</div>
+      </div>
+    </div>
+  `;
+
+  const details = Array.isArray(attempt.guidelinesMcqDetail) ? attempt.guidelinesMcqDetail : [];
+  const itemsHtml = details.length ? details.map((d, i) => {
+    const qId = d.questionId || d.id || "";
+    const meta = getGuidelinesQuestionMeta(qId);
+    const questionText = (meta && meta.question) || d.question || qId;
+    const sectionTopic = (meta && meta.section) || d.section || "";
+    let traineeAnswer = d.answer || "";
+    let correctAnswer = d.correctAnswer || "";
+
+    if (meta && meta.options) {
+      if (d.selected && meta.options[d.selected]) {
+        traineeAnswer = meta.options[d.selected];
+      } else if (!traineeAnswer && d.selected) {
+        traineeAnswer = d.selected;
+      }
+      if (meta.correctKey && meta.options[meta.correctKey]) {
+        correctAnswer = meta.options[meta.correctKey];
+      }
+    }
+
+    return `
+    <div class="feedback-item">
+      <div class="feedback-item-head">
+        <strong>Question ${d.displayNumber || (i + 1)} ${qId ? `(${escapeHtml(qId)})` : ""}</strong>
+        ${feedbackBadge(!!d.isCorrect)}
+      </div>
+      ${sectionTopic ? `<div class="feedback-label">Topic</div><div style="font-size:12px;color:var(--text-muted);margin-bottom:6px;">${escapeHtml(sectionTopic)}</div>` : ""}
+      <div class="feedback-label">Question</div>
+      <div style="font-size:13px;margin-bottom:8px;line-height:1.5;">${escapeHtml(questionText)}</div>
+      <div class="feedback-label">Trainee Answer</div>
+      <div class="feedback-text">${escapeHtml(traineeAnswer || "(none)")}</div>
+      <div class="feedback-label">Correct Answer</div>
+      <div class="feedback-text">${escapeHtml(correctAnswer || "")}</div>
+    </div>
+  `;
+  }).join("") : '<div class="empty-report"><p>No question details recorded.</p></div>';
+
+  area.innerHTML = `
+    ${attemptSelectHtml}
+    ${summaryHtml}
+    <div class="feedback-section" style="margin-top:16px;">
+      <h3>Questions & Answers</h3>
+      ${itemsHtml}
+    </div>
+  `;
+}
+
+(async function init() {
+  if (getAdminToken()) {
+    showDashboard();
+    await initDashboard();
+  } else {
+    showLogin();
+    document.getElementById("adminEmail").focus();
+  }
+})();
+
+document.getElementById("adminPassword").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") adminLogin();
+});
+</script>
+</body>
+</html>

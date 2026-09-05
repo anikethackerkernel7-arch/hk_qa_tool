@@ -1,5 +1,5 @@
 /**
- * Argos Training — Google Sheets receiver (v18)
+ * Argos Training — Google Sheets receiver (v19)
  *
  * POST routes (data.type / data.action):
  *  - Practice clips (default) — per-user sheet + summary totals
@@ -117,6 +117,10 @@ function doGet(e) {
 
     if (action === "admin_users") {
       return jsonResponse(handleAdminListUsers(params.token));
+    }
+
+    if (action === "admin_submissions") {
+      return jsonResponse(handleAdminGetSubmissions(params.token, params.email));
     }
 
     return ContentService
@@ -863,7 +867,110 @@ function handleUserAdminPost(data) {
   if (action === "admin_toggle_user") {
     return jsonResponse(handleAdminToggleUser(data));
   }
+  if (action === "admin_submissions") {
+    return jsonResponse(handleAdminGetSubmissions(data.token, data.email));
+  }
 
   return jsonResponse({ ok: false, message: "Unknown action." });
+}
+
+function safeJsonParse_(str, fallback) {
+  if (!str) return fallback;
+  if (typeof str !== "string") return str;
+  try {
+    return JSON.parse(str);
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function parseDateValue_(val) {
+  if (!val) return 0;
+  if (val instanceof Date) return val.getTime();
+  const t = Date.parse(val);
+  return isNaN(t) ? 0 : t;
+}
+
+function handleAdminGetSubmissions(token, email) {
+  try {
+    requireAdminToken_(token);
+    const targetEmail = normalizeEmail(email);
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 1. Assessment submissions
+    const assessments = [];
+    const assessSheet = ss.getSheetByName(ASSESSMENT_SHEET_NAME);
+    if (assessSheet && assessSheet.getLastRow() > 1) {
+      const rows = assessSheet.getRange(2, 1, assessSheet.getLastRow() - 1, ASSESSMENT_HEADERS.length).getValues();
+      rows.forEach((r) => {
+        const rowEmail = normalizeEmail(r[2]);
+        if (!targetEmail || rowEmail === targetEmail) {
+          assessments.push({
+            timestamp: r[0] ? new Date(r[0]).toISOString() : "",
+            name: String(r[1] || ""),
+            email: rowEmail,
+            overallScore: r[3] !== "" ? Number(r[3]) : null,
+            mcqAScore: r[4] !== "" ? Number(r[4]) : null,
+            mcqBScore: r[5] !== "" ? Number(r[5]) : null,
+            transcribeScore: r[6] !== "" ? Number(r[6]) : null,
+            mcqADetail: safeJsonParse_(r[7], []),
+            mcqBDetail: safeJsonParse_(r[8], []),
+            transcribeDetail: safeJsonParse_(r[9], []),
+            sessionElapsedSec: r[10] !== "" ? Number(r[10]) : null,
+            submittedAt: String(r[11] || ""),
+            guidelinesMcqScore: r[12] !== "" ? Number(r[12]) : null,
+            guidelinesMcqDetail: safeJsonParse_(r[13], [])
+          });
+        }
+      });
+      // Sort descending by timestamp / submittedAt
+      assessments.sort((a, b) => {
+        const tA = parseDateValue_(a.submittedAt || a.timestamp);
+        const tB = parseDateValue_(b.submittedAt || b.timestamp);
+        return tB - tA;
+      });
+    }
+
+    // 2. Guidelines MCQ submissions
+    const guidelines = [];
+    const guideSheet = ss.getSheetByName(GUIDELINES_MCQ_SHEET_NAME);
+    if (guideSheet && guideSheet.getLastRow() > 1) {
+      const rows = guideSheet.getRange(2, 1, guideSheet.getLastRow() - 1, GUIDELINES_MCQ_HEADERS.length).getValues();
+      rows.forEach((r) => {
+        const rowEmail = normalizeEmail(r[2]);
+        if (!targetEmail || rowEmail === targetEmail) {
+          guidelines.push({
+            timestamp: r[0] ? new Date(r[0]).toISOString() : "",
+            name: String(r[1] || ""),
+            email: rowEmail,
+            guidelinesMcqScore: r[3] !== "" ? Number(r[3]) : null,
+            guidelinesMcqDetail: safeJsonParse_(r[4], []),
+            submittedAt: String(r[5] || ""),
+            sessionStartedAt: String(r[6] || "")
+          });
+        }
+      });
+      // Sort descending by timestamp / submittedAt
+      guidelines.sort((a, b) => {
+        const tA = parseDateValue_(a.submittedAt || a.timestamp);
+        const tB = parseDateValue_(b.submittedAt || b.timestamp);
+        return tB - tA;
+      });
+    }
+
+    return {
+      ok: true,
+      email: targetEmail,
+      assessments: assessments,
+      guidelines: guidelines
+    };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminGetSubmissions failed: " + err);
+    return { ok: false, message: "Unable to load submissions." };
+  }
 }
 

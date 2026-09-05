@@ -68,6 +68,10 @@
   .btn-secondary { background: white; color: var(--text); border: 1px solid var(--border); }
   .btn-danger { background: white; color: var(--danger); border: 1px solid #fecaca; }
   .btn-danger:hover { background: #fef2f2; }
+  .btn-outline { background: white; color: var(--primary); border: 1px solid var(--primary); }
+  .btn-outline:hover { background: #f0fdfa; }
+  .btn-outline:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; border-radius: 6px; }
   .app-header {
     background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
     color: white; padding: 14px 24px;
@@ -116,8 +120,14 @@
     opacity: 0; transform: translateY(8px); transition: all 0.2s; pointer-events: none; z-index: 100;
   }
   .toast.show { opacity: 1; transform: translateY(0); }
-  .toast.error { background: var(--danger); }
-  .toast.success { background: var(--success); }
+  .spinner-sm {
+    width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: var(--primary);
+    border-radius: 50%; display: inline-block; animation: spin 0.75s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
   @media (max-width: 800px) {
     .form-row { grid-template-columns: 1fr; }
     .checkbox-field { padding-bottom: 0; }
@@ -149,7 +159,10 @@
       <h1>Argos User Admin</h1>
       <p>Manage who can log in to practice and assessment</p>
     </div>
-    <button class="btn btn-secondary" onclick="adminLogout()">Log out</button>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <a href="reports.html" class="btn btn-secondary btn-sm" style="text-decoration:none;">View Reports →</a>
+      <button class="btn btn-secondary btn-sm" onclick="adminLogout()">Log out</button>
+    </div>
   </header>
 
   <div class="container">
@@ -181,11 +194,11 @@
               <th>Email</th>
               <th>Name</th>
               <th>Login enabled</th>
-              <th></th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody id="usersTableBody">
-            <tr><td colspan="4" class="empty-state">Loading users...</td></tr>
+            <tr><td colspan="4" class="empty-state"><span class="spinner-sm"></span> Loading users...</td></tr>
           </tbody>
         </table>
       </div>
@@ -289,7 +302,10 @@ function renderUsers() {
         </label>
       </td>
       <td>
-        <button class="btn btn-danger" data-index="${index}" onclick="removeUserByIndex(this)">Remove</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <a href="reports.html?email=${encodeURIComponent(user.email)}" class="btn btn-outline btn-sm" style="text-decoration:none;">View Report</a>
+          <button class="btn btn-danger btn-sm" data-index="${index}" onclick="removeUserByIndex(this)">Remove</button>
+        </div>
       </td>
     </tr>
   `).join("");
@@ -302,8 +318,18 @@ async function loadUsers() {
     return;
   }
 
+  const tbody = document.getElementById("usersTableBody");
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><span class="spinner-sm"></span> Loading users...</td></tr>';
+  }
+
   try {
     users = await apiGetUsers(token);
+    users.sort((a, b) => {
+      const nameA = String(a.name || a.email || "").trim().toLowerCase();
+      const nameB = String(b.name || b.email || "").trim().toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
     renderUsers();
   } catch (err) {
     console.error(err);
