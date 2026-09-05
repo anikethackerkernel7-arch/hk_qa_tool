@@ -505,6 +505,20 @@ function getGuidelinesQuestionMeta(questionId) {
   return list.find((q) => q.id === questionId) || null;
 }
 
+function guidelinesCorrectSummary(detail, scoreFallback) {
+  const list = Array.isArray(detail) ? detail : [];
+  const total = list.length;
+  if (total > 0) {
+    const correct = list.filter((d) => !!d.isCorrect).length;
+    return { correct, total, label: `${correct} / ${total} correct` };
+  }
+  if (scoreFallback != null && Number.isFinite(Number(scoreFallback))) {
+    const correct = Math.round(Number(scoreFallback));
+    return { correct, total: null, label: `${correct} correct` };
+  }
+  return { correct: null, total: null, label: "" };
+}
+
 function showLogin() {
   document.getElementById("loginScreen").classList.remove("hidden");
   document.getElementById("dashboard").classList.add("hidden");
@@ -784,11 +798,12 @@ function renderAssessmentTab() {
   let guidelinesSectionHtml = "";
   const gList = Array.isArray(attempt.guidelinesMcqDetail) ? attempt.guidelinesMcqDetail : [];
   if (gList.length) {
+    const gSummary = guidelinesCorrectSummary(gList, attempt.guidelinesMcqScore);
     guidelinesSectionHtml = `
       <div class="feedback-section">
         <h3>
           <span>Guidelines Comprehension</span>
-          <span style="font-size:12px;font-weight:normal;color:var(--text-muted);">${attempt.guidelinesMcqScore != null ? attempt.guidelinesMcqScore + " pts" : ""}</span>
+          <span style="font-size:12px;font-weight:normal;color:var(--text-muted);">${escapeHtml(gSummary.label)}</span>
         </h3>
         ${gList.map((d, i) => {
           const qId = d.questionId || d.id || "";
@@ -971,7 +986,8 @@ function renderGuidelinesTab() {
           const attemptNum = totalAttempts - idx;
           const isLatest = idx === 0 ? " (Latest)" : "";
           const dateStr = formatDateTime(item.submittedAt || item.timestamp);
-          const scoreStr = item.guidelinesMcqScore != null ? ` · Score: ${item.guidelinesMcqScore} pts` : "";
+          const gSummary = guidelinesCorrectSummary(item.guidelinesMcqDetail, item.guidelinesMcqScore);
+          const scoreStr = gSummary.label ? ` · ${gSummary.label}` : "";
           return `<option value="${idx}" ${idx === selectedGuidelinesIndex ? "selected" : ""}>
             Attempt ${attemptNum}${isLatest} — ${dateStr}${scoreStr}
           </option>`;
@@ -986,14 +1002,15 @@ function renderGuidelinesTab() {
     </div>
   `;
 
-  const scoreNumHtml = attempt.guidelinesMcqScore != null ? `${attempt.guidelinesMcqScore} pts` : "—";
+  const gSummary = guidelinesCorrectSummary(attempt.guidelinesMcqDetail, attempt.guidelinesMcqScore);
+  const scoreNumHtml = gSummary.label || "—";
   const submittedHtml = formatDateTime(attempt.submittedAt || attempt.timestamp);
   const startedHtml = formatDateTime(attempt.sessionStartedAt);
 
   const summaryHtml = `
     <div class="score-summary-grid">
       <div class="score-box highlight">
-        <div class="score-box-num">${scoreNumHtml}</div>
+        <div class="score-box-num" style="font-size:22px;">${escapeHtml(scoreNumHtml)}</div>
         <div class="score-box-lbl">Guidelines Score</div>
       </div>
       <div class="score-box">

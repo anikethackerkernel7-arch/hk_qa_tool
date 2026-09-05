@@ -112,7 +112,7 @@ window.ASSESSMENT_DATA_EMBEDDED = {
     "mcqAPerItem": 5,
     "mcqBPerItem": 10,
     "transcribeMax": 40,
-    "guidelinesMcqPerItem": 2.5
+    "guidelinesMcqPerItem": 1
   },
   "guidelinesMcq": [
     {

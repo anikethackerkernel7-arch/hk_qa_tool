@@ -388,6 +388,8 @@ const ASSESSMENT_HEADERS = [
   "GuidelinesMcqDetail"
 ];
 
+// GuidelinesMcqScore = number of correct answers (not weighted points)
+
 function handleAssessmentPost(data) {
   try {
     const sheet = getOrCreateAssessmentSheet();
@@ -483,6 +485,7 @@ const GUIDELINES_MCQ_HEADERS = [
   "SubmittedAt",
   "SessionStartedAt"
 ];
+// GuidelinesMcqScore = number of correct answers (not weighted points)
 
 function handleGuidelinesMcqPost(data) {
   try {

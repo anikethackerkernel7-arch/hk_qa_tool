@@ -341,8 +341,9 @@ const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syft
 window.SHEETS_ENDPOINT = SHEETS_ENDPOINT;
 const SESSION_KEY = "argos_assessment_session";
 
-const SECTIONS_DEFAULT = ["guidelinesMcq", "learn", "mcqA", "mcqB", "transcribe"];
+const SECTIONS_DEFAULT = ["briefing", "guidelinesMcq", "learn", "mcqA", "mcqB", "transcribe"];
 const SECTION_LABELS = {
+  briefing: "What You Will Be Doing",
   learn: "Training material",
   guidelinesMcq: "Guidelines comprehension",
   mcqA: "Choose the correct option (2 choices)",
@@ -350,6 +351,9 @@ const SECTION_LABELS = {
   transcribe: "Transcribe the audios"
 };
 const FORCE_CONTINUE_THRESHOLDS = { mcqB: 80, transcribe: 70 };
+const GUIDELINES_MCQ_PICK = 20;
+const BRIEFING_BODY =
+  "Our client built an AI system that turns speech into text. Some recordings were too difficult for it — unclear speech, background noise, or people talking over each other. Your job is to do what the AI could not: listen to a short clip and write down exactly what was said, along with a few labels that describe what you heard. Your work teaches the system to handle difficult audio better.";
 
 let ASSESSMENT_DATA = null;
 let state = {
@@ -382,13 +386,13 @@ function shuffleCopy(arr) {
 }
 
 function buildSectionOrder() {
-  return ["guidelinesMcq", "learn"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
+  return ["briefing", "guidelinesMcq", "learn"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
 }
 
 function buildItemOrders(data) {
   const d = data || ASSESSMENT_DATA || {};
   return {
-    guidelinesMcq: shuffleCopy((d.guidelinesMcq || []).map((q) => q.id)),
+    guidelinesMcq: shuffleCopy((d.guidelinesMcq || []).map((q) => q.id)).slice(0, GUIDELINES_MCQ_PICK),
     mcqA: shuffleCopy((d.mcqA || []).map((q) => q.id)),
     mcqB: shuffleCopy((d.mcqB || []).map((q) => q.id)),
     transcribe: shuffleCopy((d.transcribe || []).map((q) => q.id))
@@ -412,16 +416,19 @@ function ensureShuffleOrders() {
   if (!ASSESSMENT_DATA) loadData();
   let changed = false;
   const validSections = Array.isArray(state.sectionOrder)
-    && state.sectionOrder[0] === "guidelinesMcq"
-    && state.sectionOrder[1] === "learn"
-    && state.sectionOrder.length === 5
+    && state.sectionOrder[0] === "briefing"
+    && state.sectionOrder[1] === "guidelinesMcq"
+    && state.sectionOrder[2] === "learn"
+    && state.sectionOrder.length === 6
     && ["mcqA", "mcqB", "transcribe"].every((k) => state.sectionOrder.includes(k));
   if (!validSections) {
     state.sectionOrder = buildSectionOrder();
     changed = true;
   }
+  const guidelinesOrderLen = state.itemOrders?.guidelinesMcq?.length || 0;
   const needItems = !state.itemOrders
-    || !state.itemOrders.guidelinesMcq?.length
+    || !guidelinesOrderLen
+    || guidelinesOrderLen > GUIDELINES_MCQ_PICK
     || !state.itemOrders.mcqA?.length
     || !state.itemOrders.mcqB?.length
     || !state.itemOrders.transcribe?.length;
@@ -459,9 +466,14 @@ function getOrderedQuestions(sectionKey) {
   const all = ASSESSMENT_DATA[sectionKey] || [];
   const byId = {};
   all.forEach((q) => { byId[q.id] = q; });
-  const ids = state.itemOrders[sectionKey] || all.map((q) => q.id);
+  let ids = state.itemOrders[sectionKey] || all.map((q) => q.id);
+  // Guidelines uses a random subset — never re-append the rest of the pool
+  if (sectionKey === "guidelinesMcq") {
+    ids = ids.slice(0, GUIDELINES_MCQ_PICK);
+    return ids.map((id) => byId[id]).filter(Boolean);
+  }
   const ordered = ids.map((id) => byId[id]).filter(Boolean);
-  // Append any new ids not in saved order
+  // Append any new ids not in saved order (audio sections only)
   all.forEach((q) => {
     if (!ids.includes(q.id)) ordered.push(q);
   });
@@ -481,6 +493,7 @@ function getMcqOptionKeys(q, sectionKey) {
 
 function speedSelectHtml() {
   const opts = [
+    { v: "0.5", label: "0.5x" },
     { v: "0.75", label: "0.75x" },
     { v: "1", label: "1.0x" },
     { v: "1.25", label: "1.25x" },
@@ -678,6 +691,16 @@ function renderLearn(card) {
   `;
 }
 
+function renderBriefing(card) {
+  card.innerHTML = `
+    <div class="card-title">${SECTION_LABELS.briefing}</div>
+    <div class="intro-box" style="line-height:1.7;font-size:15px;">${escapeHtml(BRIEFING_BODY)}</div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="nextSection()">Continue →</button>
+    </div>
+  `;
+}
+
 function renderMcq(card, key, title) {
   const items = getOrderedQuestions(key);
   const answers = state.answers[key];
@@ -724,7 +747,7 @@ function renderGuidelinesMcq(card) {
 
   card.innerHTML = `
     <div class="card-title">${SECTION_LABELS.guidelinesMcq}</div>
-    <div class="intro-box">Answer all guidelines questions below. Choose the best option for each.</div>
+    <div class="intro-box">Answer all ${items.length} guidelines questions below. Choose the best option for each.</div>
     ${items.map((q, qi) => {
       const selected = answers[q.id] || "";
       const keys = getMcqOptionKeys(q, "guidelinesMcq");
@@ -876,7 +899,11 @@ function renderSection(scrollToTop) {
   const card = document.getElementById("sectionCard");
   const sections = getSectionOrder();
   const key = sections[state.sectionIndex] || sections[0];
-  if (key === "learn") {
+  if (key === "briefing") {
+    setWorkspaceHintsMode(false);
+    hideTypingHints();
+    renderBriefing(card);
+  } else if (key === "learn") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
     renderLearn(card);
@@ -1060,7 +1087,7 @@ function forceContinueSection(key) {
 
 function validateSection(key, opts) {
   const fromAllSections = !!(opts && opts.fromAllSections);
-  if (key === "learn") return true;
+  if (key === "briefing" || key === "learn") return true;
   if (key === "guidelinesMcq" || key === "mcqA") {
     const sectionData = getOrderedQuestions(key);
     for (let i = 0; i < sectionData.length; i++) {
@@ -1179,7 +1206,7 @@ async function nextSection() {
 async function submitGuidelinesMcq() {
   try {
     const w = ASSESSMENT_DATA.weights;
-    const guidelinesMcqDetail = scoreMcqSection("guidelinesMcq", w.guidelinesMcqPerItem || 2.5);
+    const guidelinesMcqDetail = scoreMcqSection("guidelinesMcq", w.guidelinesMcqPerItem || 1);
     const guidelinesMcqScore = guidelinesMcqDetail.reduce((s, x) => s + x.points, 0);
     const payload = {
       type: "assessment_guidelines",
@@ -1211,17 +1238,32 @@ function prevSection() {
   }
 }
 
+function guidelinesCorrectSummary(detail, scoreFallback) {
+  const list = Array.isArray(detail) ? detail : [];
+  const total = list.length;
+  if (total > 0) {
+    const correct = list.filter((d) => !!d.isCorrect).length;
+    return { correct, total, label: `${correct} / ${total} correct` };
+  }
+  if (scoreFallback != null && Number.isFinite(Number(scoreFallback))) {
+    const correct = Math.round(Number(scoreFallback));
+    return { correct, total: null, label: `${correct} correct` };
+  }
+  return { correct: null, total: null, label: "" };
+}
+
 function scoreMcqSection(sectionKey, perItemWeight) {
   const questions = sectionKey === "guidelinesMcq"
     ? getOrderedQuestions(sectionKey)
     : (ASSESSMENT_DATA[sectionKey] || []);
+  const weight = sectionKey === "guidelinesMcq" ? 1 : perItemWeight;
   return questions.map((q, qi) => {
     const selected = state.answers[sectionKey][q.id] || "";
     const correct = selected === q.correctKey;
     const selectedText = normalizeText(q.options[selected] || "");
     const correctText = normalizeText(q.options[q.correctKey] || "");
     const isCorrect = !!(correct || (selectedText && selectedText === correctText));
-    const points = isCorrect ? perItemWeight : 0;
+    const points = isCorrect ? weight : 0;
     const row = {
       questionId: q.id,
       selected,
@@ -1242,7 +1284,7 @@ function scoreMcqSection(sectionKey, perItemWeight) {
 
 function scoreAssessment() {
   const w = ASSESSMENT_DATA.weights;
-  const guidelinesMcqDetail = scoreMcqSection("guidelinesMcq", w.guidelinesMcqPerItem || 2.5);
+  const guidelinesMcqDetail = scoreMcqSection("guidelinesMcq", w.guidelinesMcqPerItem || 1);
   const mcqADetail = scoreMcqSection("mcqA", w.mcqAPerItem).map((d) => ({
     clipId: d.questionId,
     selected: d.selected,
@@ -1456,9 +1498,14 @@ function renderFeedback(scores) {
     `;
   }).join("");
 
+  const guidelinesSummary = guidelinesCorrectSummary(
+    scores.guidelinesMcqDetail,
+    scores.guidelinesMcqScore
+  );
+
   panel.innerHTML = `
     <div class="feedback-section">
-      <h3>${escapeHtml(SECTION_LABELS.guidelinesMcq)}</h3>
+      <h3>${escapeHtml(SECTION_LABELS.guidelinesMcq)}${guidelinesSummary.label ? ` <span style="font-size:13px;font-weight:500;color:var(--text-muted);">· ${escapeHtml(guidelinesSummary.label)}</span>` : ""}</h3>
       ${guidelinesHtml || "<div class=\"feedback-item\">No answers</div>"}
     </div>
     <div class="feedback-section">
