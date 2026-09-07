@@ -341,9 +341,10 @@ const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syft
 window.SHEETS_ENDPOINT = SHEETS_ENDPOINT;
 const SESSION_KEY = "argos_assessment_session";
 
-const SECTIONS_DEFAULT = ["briefing", "guidelinesMcq", "learn", "mcqA", "mcqB", "transcribe"];
+const SECTIONS_DEFAULT = ["briefing", "structure", "guidelinesMcq", "learn", "mcqA", "mcqB", "transcribe"];
 const SECTION_LABELS = {
   briefing: "What You Will Be Doing",
+  structure: "Training Structure",
   learn: "Training material",
   guidelinesMcq: "Guidelines comprehension",
   mcqA: "Choose the correct option (2 choices)",
@@ -354,6 +355,25 @@ const FORCE_CONTINUE_THRESHOLDS = { mcqB: 80, transcribe: 70 };
 const GUIDELINES_MCQ_PICK = 20;
 const BRIEFING_BODY =
   "Our client built an AI system that turns speech into text. Some recordings were too difficult for it — unclear speech, background noise, or people talking over each other. Your job is to do what the AI could not: listen to a short clip and write down exactly what was said, along with a few labels that describe what you heard. Your work teaches the system to handle difficult audio better.";
+const STRUCTURE_INTRO = "This training is divided into 5 sections:";
+const STRUCTURE_SECTIONS = [
+  {
+    title: "Section 1 – MCQ Questions",
+    body: "You will attempt multiple-choice questions without referring to the guidelines."
+  },
+  {
+    title: "Section 2 – Choose the Correct Transcript",
+    body: "You will listen to 4 audio clips and choose the correct transcript between Option 1 and Option 2."
+  },
+  {
+    title: "Section 3 – Correct the Transcript",
+    body: "You will receive 4 transcripts that contain mistakes. Your task is to identify and correct the errors."
+  },
+  {
+    title: "Section 4 – Full Transcription",
+    body: "You will listen to 4 audio clips and transcribe them completely, from start to finish."
+  }
+];
 
 let ASSESSMENT_DATA = null;
 let state = {
@@ -386,7 +406,7 @@ function shuffleCopy(arr) {
 }
 
 function buildSectionOrder() {
-  return ["briefing", "guidelinesMcq", "learn"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
+  return ["briefing", "structure", "guidelinesMcq", "learn"].concat(shuffleCopy(["mcqA", "mcqB", "transcribe"]));
 }
 
 function buildItemOrders(data) {
@@ -417,9 +437,10 @@ function ensureShuffleOrders() {
   let changed = false;
   const validSections = Array.isArray(state.sectionOrder)
     && state.sectionOrder[0] === "briefing"
-    && state.sectionOrder[1] === "guidelinesMcq"
-    && state.sectionOrder[2] === "learn"
-    && state.sectionOrder.length === 6
+    && state.sectionOrder[1] === "structure"
+    && state.sectionOrder[2] === "guidelinesMcq"
+    && state.sectionOrder[3] === "learn"
+    && state.sectionOrder.length === 7
     && ["mcqA", "mcqB", "transcribe"].every((k) => state.sectionOrder.includes(k));
   if (!validSections) {
     state.sectionOrder = buildSectionOrder();
@@ -701,6 +722,27 @@ function renderBriefing(card) {
   `;
 }
 
+function renderStructure(card) {
+  card.innerHTML = `
+    <div class="card-title">${SECTION_LABELS.structure}</div>
+    <div class="intro-box" style="line-height:1.7;font-size:15px;">
+      <p style="margin:0 0 14px;">${escapeHtml(STRUCTURE_INTRO)}</p>
+      <ol style="margin:0;padding-left:1.25em;">
+        ${STRUCTURE_SECTIONS.map((s) => `
+          <li style="margin-bottom:12px;">
+            <strong>${escapeHtml(s.title)}:</strong>
+            ${escapeHtml(s.body)}
+          </li>
+        `).join("")}
+      </ol>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="prevSection()">← Back</button>
+      <button class="btn btn-primary" onclick="nextSection()">Continue →</button>
+    </div>
+  `;
+}
+
 function renderMcq(card, key, title) {
   const items = getOrderedQuestions(key);
   const answers = state.answers[key];
@@ -903,6 +945,10 @@ function renderSection(scrollToTop) {
     setWorkspaceHintsMode(false);
     hideTypingHints();
     renderBriefing(card);
+  } else if (key === "structure") {
+    setWorkspaceHintsMode(false);
+    hideTypingHints();
+    renderStructure(card);
   } else if (key === "learn") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
@@ -1087,7 +1133,7 @@ function forceContinueSection(key) {
 
 function validateSection(key, opts) {
   const fromAllSections = !!(opts && opts.fromAllSections);
-  if (key === "briefing" || key === "learn") return true;
+  if (key === "briefing" || key === "structure" || key === "learn") return true;
   if (key === "guidelinesMcq" || key === "mcqA") {
     const sectionData = getOrderedQuestions(key);
     for (let i = 0; i < sectionData.length; i++) {

@@ -1,5 +1,5 @@
 /**
- * Argos Training — Google Sheets receiver (v19)
+ * Argos Training — Google Sheets receiver (v20)
  *
  * POST routes (data.type / data.action):
  *  - Practice clips (default) — per-user sheet + summary totals
@@ -10,6 +10,7 @@
  * Practice sheet behaviour:
  *  - Idempotent clip submissions (email + clipId + clipStartedAt)
  *  - Skipped submissions ignored; correction columns (Incorrect / Original Text)
+ *  - SimilarityPercent per clip (Written vs Original) + AVG SIMILARITY % in totals
  *  - Totals block with mm:ss time column as plain text
  */
 
@@ -36,7 +37,8 @@ const HEADERS = [
   "Session Elapsed (sec)",
   "Clip Started At",
   "Clip Submitted At",
-  "Skipped"
+  "Skipped",
+  "SimilarityPercent"
 ];
 
 // 0-based indexes into HEADERS / data rows
@@ -48,6 +50,7 @@ const COL = {
   timeMmSs: 22,       // 1-based column = 23
   clipStartedAt: 24,
   skipped: 26,
+  similarity: 27,
 };
 
 // Marker strings used to identify totals rows so we can safely filter them out.
@@ -189,7 +192,10 @@ function buildDataRow(data) {
     data.sessionElapsedSec || 0,
     data.clipStartedAt    || "",
     data.clipSubmittedAt  || "",
-    data.skipped ? "Yes" : "No"
+    data.skipped ? "Yes" : "No",
+    data.similarityPercent != null && data.similarityPercent !== ""
+      ? Number(data.similarityPercent)
+      : ""
   ];
 }
 
@@ -211,6 +217,11 @@ function getExistingDataRows(sheet) {
     // Filter out any old skipped rows so they get removed on the next rewrite
     if (r[COL.skipped] === "Yes") return false;
     return true;
+  }).map((r) => {
+    // Pad older rows that predate SimilarityPercent
+    const row = r.slice();
+    while (row.length < HEADERS.length) row.push("");
+    return row.slice(0, HEADERS.length);
   });
 }
 
@@ -249,6 +260,7 @@ function rewriteUserSheet(sheet, dataRows) {
     ["TOTAL TIME (sec)",    totals.timeSec],
     ["TOTAL TIME (mm:ss)",  formatSeconds(totals.timeSec)],
     ["AVG TIME PER CLIP",   formatSeconds(totals.avgSec)],
+    ["AVG SIMILARITY %",    totals.avgSimilarity],
   ];
 
   const totalsRange = sheet.getRange(totalsStartRow, 1, totalsBlock.length, 2);
@@ -257,11 +269,12 @@ function rewriteUserSheet(sheet, dataRows) {
   totalsRange.setBackground("#f0fdfa");
 
   // Force correct display format per row
-  sheet.getRange(totalsStartRow,     2).setNumberFormat("0");   // TOTAL CLIPS       — integer
-  sheet.getRange(totalsStartRow + 1, 2).setNumberFormat("0");   // TOTAL PLAY COUNT  — integer
-  sheet.getRange(totalsStartRow + 2, 2).setNumberFormat("0");   // TOTAL TIME (sec)  — integer
-  sheet.getRange(totalsStartRow + 3, 2).setNumberFormat("@");   // TOTAL TIME (mm:ss)— plain text
-  sheet.getRange(totalsStartRow + 4, 2).setNumberFormat("@");   // AVG TIME PER CLIP — plain text
+  sheet.getRange(totalsStartRow,     2).setNumberFormat("0");   // TOTAL CLIPS
+  sheet.getRange(totalsStartRow + 1, 2).setNumberFormat("0");   // TOTAL PLAY COUNT
+  sheet.getRange(totalsStartRow + 2, 2).setNumberFormat("0");   // TOTAL TIME (sec)
+  sheet.getRange(totalsStartRow + 3, 2).setNumberFormat("@");   // TOTAL TIME (mm:ss)
+  sheet.getRange(totalsStartRow + 4, 2).setNumberFormat("@");   // AVG TIME PER CLIP
+  sheet.getRange(totalsStartRow + 5, 2).setNumberFormat("0");   // AVG SIMILARITY %
 
   // Re-write time strings as literal text to prevent Sheets from parsing them as durations
   sheet.getRange(totalsStartRow + 3, 2).setValue("'" + formatSeconds(totals.timeSec));
@@ -272,11 +285,19 @@ function computeTotals(dataRows) {
   const timeSec = dataRows.reduce((sum, r) => sum + (Number(r[COL.timeSec]) || 0), 0);
   const plays   = dataRows.reduce((sum, r) => sum + (Number(r[COL.playCount]) || 0), 0);
   const count   = dataRows.length;
+  const sims = dataRows
+    .map((r) => r[COL.similarity])
+    .filter((v) => v !== "" && v != null && !isNaN(Number(v)))
+    .map((v) => Number(v));
+  const avgSimilarity = sims.length
+    ? Math.round(sims.reduce((s, v) => s + v, 0) / sims.length)
+    : "";
   return {
     count,
     plays,
     timeSec,
-    avgSec: count ? Math.round(timeSec / count) : 0
+    avgSec: count ? Math.round(timeSec / count) : 0,
+    avgSimilarity
   };
 }
 
@@ -310,15 +331,24 @@ function getOrCreateUserSheet(email) {
 function updateSummarySheet(data) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let summary = ss.getSheetByName("Summary");
+  const summaryHeaders = [
+    "Name", "Email", "Last Submission",
+    "Total Clips", "Total Time (mm:ss)",
+    "Avg Time per Clip", "Avg Similarity %", "Sheet Link"
+  ];
   if (!summary) {
     summary = ss.insertSheet("Summary", 0);
-    summary.appendRow([
-      "Name", "Email", "Last Submission",
-      "Total Clips", "Total Time (mm:ss)",
-      "Avg Time per Clip", "Sheet Link"
-    ]);
-    summary.getRange(1, 1, 1, 7).setFontWeight("bold");
+    summary.appendRow(summaryHeaders);
+    summary.getRange(1, 1, 1, summaryHeaders.length).setFontWeight("bold");
     summary.setFrozenRows(1);
+  } else {
+    // Ensure Avg Similarity % column exists (migrate older 7-col Summary)
+    const lastCol = Math.max(summary.getLastColumn(), 1);
+    const existing = summary.getRange(1, 1, 1, lastCol).getValues()[0];
+    if (existing[6] !== "Avg Similarity %" || existing[7] !== "Sheet Link") {
+      summary.getRange(1, 1, 1, summaryHeaders.length).setValues([summaryHeaders]);
+      summary.getRange(1, 1, 1, summaryHeaders.length).setFontWeight("bold");
+    }
   }
 
   const email = data.email || "";
@@ -340,16 +370,18 @@ function updateSummarySheet(data) {
     totals.count,
     formatSeconds(totals.timeSec),
     formatSeconds(totals.avgSec),
+    totals.avgSimilarity === "" ? "" : totals.avgSimilarity,
     link
   ];
 
   if (rowIndex === -1) {
     summary.appendRow(newRow);
-    if (link) summary.getRange(summary.getLastRow(), 7).setFormula(link);
+    if (link) summary.getRange(summary.getLastRow(), 8).setFormula(link);
     const r = summary.getLastRow();
     summary.getRange(r, 4).setNumberFormat("0");   // Total Clips
     summary.getRange(r, 5).setNumberFormat("@");   // Total Time (mm:ss)
     summary.getRange(r, 6).setNumberFormat("@");   // Avg Time per Clip
+    summary.getRange(r, 7).setNumberFormat("0");   // Avg Similarity %
   } else {
     const r = rowIndex + 1;
     summary.getRange(r, 1).setValue(newRow[0]);
@@ -357,10 +389,12 @@ function updateSummarySheet(data) {
     summary.getRange(r, 4).setValue(newRow[3]);
     summary.getRange(r, 5).setValue(newRow[4]);
     summary.getRange(r, 6).setValue(newRow[5]);
-    if (link) summary.getRange(r, 7).setFormula(link);
+    summary.getRange(r, 7).setValue(newRow[6]);
+    if (link) summary.getRange(r, 8).setFormula(link);
     summary.getRange(r, 4).setNumberFormat("0");
     summary.getRange(r, 5).setNumberFormat("@");
     summary.getRange(r, 6).setNumberFormat("@");
+    summary.getRange(r, 7).setNumberFormat("0");
   }
 }
 
