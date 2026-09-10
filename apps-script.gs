@@ -1,11 +1,12 @@
 /**
- * Argos Training — Google Sheets receiver (v20)
+ * Argos Training — Google Sheets receiver (v21)
  *
  * POST routes (data.type / data.action):
  *  - Practice clips (default) — per-user sheet + summary totals
+ *  - training3 — shared Training3 sheet (early practice)
  *  - assessment — full assessment row on shared "Assessment" sheet
  *  - assessment_guidelines — early guidelines MCQ row on "GuidelinesMcq" sheet
- *  - action: admin_* / check_user — sheet-backed user allowlist (Users tab)
+ *  - action: admin_* / training3_* / batch_* / check_user
  *
  * Practice sheet behaviour:
  *  - Idempotent clip submissions (email + clipId + clipStartedAt)
@@ -75,6 +76,11 @@ function doPost(e) {
       return handleAssessmentPost(data);
     }
 
+    // Training 3 — shared sheet (does not touch per-user practice sheets)
+    if (data.type === "training3") {
+      return handleTraining3Post(data);
+    }
+
     // Ignore skipped submissions — don't save them to the sheet
     if (data.skipped === true) {
       return ContentService
@@ -124,6 +130,18 @@ function doGet(e) {
 
     if (action === "admin_submissions") {
       return jsonResponse(handleAdminGetSubmissions(params.token, params.email));
+    }
+
+    if (action === "get_training3_assignment") {
+      return jsonResponse(handleGetTraining3Assignment(params.email));
+    }
+
+    if (action === "admin_batches") {
+      return jsonResponse(handleAdminListBatches(params.token));
+    }
+
+    if (action === "admin_batch_members") {
+      return jsonResponse(handleAdminListBatchMembers(params.token, params.batchId));
     }
 
     return ContentService
@@ -907,6 +925,30 @@ function handleUserAdminPost(data) {
   if (action === "admin_submissions") {
     return jsonResponse(handleAdminGetSubmissions(data.token, data.email));
   }
+  if (action === "training3_get_or_assign") {
+    return jsonResponse(handleTraining3GetOrAssign(data));
+  }
+  if (action === "admin_create_batch") {
+    return jsonResponse(handleAdminCreateBatch(data));
+  }
+  if (action === "admin_archive_batch") {
+    return jsonResponse(handleAdminArchiveBatch(data));
+  }
+  if (action === "admin_add_batch_members") {
+    return jsonResponse(handleAdminAddBatchMembers(data));
+  }
+  if (action === "admin_remove_batch_member") {
+    return jsonResponse(handleAdminRemoveBatchMember(data));
+  }
+  if (action === "admin_move_batch_member") {
+    return jsonResponse(handleAdminMoveBatchMember(data));
+  }
+  if (action === "admin_batches") {
+    return jsonResponse(handleAdminListBatches(data.token));
+  }
+  if (action === "admin_batch_members") {
+    return jsonResponse(handleAdminListBatchMembers(data.token, data.batchId));
+  }
 
   return jsonResponse({ ok: false, message: "Unknown action." });
 }
@@ -996,11 +1038,19 @@ function handleAdminGetSubmissions(token, email) {
       });
     }
 
+    // 3. Training 3 submissions (shared sheet)
+    const training3 = readTraining3ClipsForEmail_(targetEmail);
+
+    // 4. Stage 4 practice (per-user sheet — read-only for reports)
+    const practice = readPracticeClipsForEmail_(targetEmail);
+
     return {
       ok: true,
       email: targetEmail,
       assessments: assessments,
-      guidelines: guidelines
+      guidelines: guidelines,
+      training3: training3,
+      practice: practice
     };
   } catch (err) {
     if (String(err.message || err) === "Unauthorized") {
@@ -1008,6 +1058,621 @@ function handleAdminGetSubmissions(token, email) {
     }
     Logger.log("handleAdminGetSubmissions failed: " + err);
     return { ok: false, message: "Unable to load submissions." };
+  }
+}
+
+/* =========================================================
+   TRAINING 3 — shared sheet + assignments
+   ========================================================= */
+
+const TRAINING3_SHEET_NAME = "Training3";
+const TRAINING3_ASSIGN_SHEET_NAME = "Training3Assignments";
+const TRAINING3_CLIP_PICK = 20;
+
+const TRAINING3_HEADERS = HEADERS.concat(["SessionId"]);
+
+const TRAINING3_ASSIGN_HEADERS = [
+  "Email",
+  "ClipIdsJson",
+  "AssignedAt",
+  "SessionId"
+];
+
+function handleTraining3Post(data) {
+  try {
+    if (data.skipped === true) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, ignored: "skipped" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    const sheet = getOrCreateTraining3Sheet();
+    ensureTraining3Headers(sheet);
+
+    if (isDuplicateTraining3Submission(sheet, data)) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ ok: true, ignored: "duplicate" }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    sheet.appendRow(buildTraining3Row(data));
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    Logger.log("handleTraining3Post failed: " + err);
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: false, error: "Unable to save Training 3 submission." }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function getOrCreateTraining3Sheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(TRAINING3_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(TRAINING3_SHEET_NAME);
+    sheet.appendRow(TRAINING3_HEADERS);
+    sheet.getRange(1, 1, 1, TRAINING3_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function ensureTraining3Headers(sheet) {
+  if (sheet.getLastRow() < 1) {
+    sheet.appendRow(TRAINING3_HEADERS);
+    sheet.getRange(1, 1, 1, TRAINING3_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    return;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (String(existing[0] || "") !== TRAINING3_HEADERS[0] || existing.length < TRAINING3_HEADERS.length) {
+    sheet.getRange(1, 1, 1, TRAINING3_HEADERS.length).setValues([TRAINING3_HEADERS]);
+    sheet.getRange(1, 1, 1, TRAINING3_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+}
+
+function isDuplicateTraining3Submission(sheet, data) {
+  if (!data.clipStartedAt) return false;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+  const values = sheet.getRange(2, 1, lastRow - 1, TRAINING3_HEADERS.length).getValues();
+  const targetEmail = String(data.email || "").trim();
+  const targetClipId = String(data.clipId || "").trim();
+  const targetStartedAt = String(data.clipStartedAt || "").trim();
+  return values.some((r) => {
+    return String(r[COL.email] || "").trim() === targetEmail &&
+      String(r[COL.clipId] || "").trim() === targetClipId &&
+      String(r[COL.clipStartedAt] || "").trim() === targetStartedAt;
+  });
+}
+
+function buildTraining3Row(data) {
+  const base = buildDataRow(data);
+  base.push(String(data.sessionId || ""));
+  return base;
+}
+
+function getOrCreateTraining3AssignSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(TRAINING3_ASSIGN_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(TRAINING3_ASSIGN_SHEET_NAME);
+    sheet.appendRow(TRAINING3_ASSIGN_HEADERS);
+    sheet.getRange(1, 1, 1, TRAINING3_ASSIGN_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  } else if (sheet.getLastRow() < 1) {
+    sheet.appendRow(TRAINING3_ASSIGN_HEADERS);
+    sheet.getRange(1, 1, 1, TRAINING3_ASSIGN_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function findTraining3AssignRow_(sheet, email) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (normalizeEmail(values[i][0]) === email) return i + 2;
+  }
+  return -1;
+}
+
+function shuffleArrayCopy_(arr) {
+  const a = Array.isArray(arr) ? arr.slice() : [];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = a[i];
+    a[i] = a[j];
+    a[j] = tmp;
+  }
+  return a;
+}
+
+function handleGetTraining3Assignment(email) {
+  try {
+    const targetEmail = normalizeEmail(email);
+    if (!targetEmail || !isValidEmail(targetEmail)) {
+      return { ok: false, message: "Please enter a valid email address.", clipIds: [] };
+    }
+    const sheet = getOrCreateTraining3AssignSheet();
+    const row = findTraining3AssignRow_(sheet, targetEmail);
+    if (row === -1) {
+      return { ok: true, assigned: false, clipIds: [], sessionId: "" };
+    }
+    const clipIds = safeJsonParse_(sheet.getRange(row, 2).getValue(), []);
+    const sessionId = String(sheet.getRange(row, 4).getValue() || "");
+    return {
+      ok: true,
+      assigned: true,
+      clipIds: Array.isArray(clipIds) ? clipIds : [],
+      sessionId: sessionId
+    };
+  } catch (err) {
+    Logger.log("handleGetTraining3Assignment failed: " + err);
+    return { ok: false, message: "Unable to load Training 3 assignment.", clipIds: [] };
+  }
+}
+
+function handleTraining3GetOrAssign(data) {
+  try {
+    const targetEmail = normalizeEmail(data.email);
+    if (!targetEmail || !isValidEmail(targetEmail)) {
+      return { ok: false, message: "Please enter a valid email address." };
+    }
+
+    const sheet = getOrCreateTraining3AssignSheet();
+    const existingRow = findTraining3AssignRow_(sheet, targetEmail);
+    if (existingRow !== -1) {
+      const clipIds = safeJsonParse_(sheet.getRange(existingRow, 2).getValue(), []);
+      const sessionId = String(sheet.getRange(existingRow, 4).getValue() || "");
+      return {
+        ok: true,
+        created: false,
+        clipIds: Array.isArray(clipIds) ? clipIds : [],
+        sessionId: sessionId
+      };
+    }
+
+    const pool = Array.isArray(data.poolClipIds)
+      ? data.poolClipIds.map((id) => String(id || "").trim()).filter(Boolean)
+      : [];
+    if (pool.length < TRAINING3_CLIP_PICK) {
+      return { ok: false, message: "Not enough clips available for Training 3." };
+    }
+
+    const clipIds = shuffleArrayCopy_(pool).slice(0, TRAINING3_CLIP_PICK);
+    const sessionId = String(data.sessionId || ("t3-" + Utilities.getUuid()));
+    const assignedAt = new Date().toISOString();
+    sheet.appendRow([targetEmail, JSON.stringify(clipIds), assignedAt, sessionId]);
+
+    return { ok: true, created: true, clipIds: clipIds, sessionId: sessionId };
+  } catch (err) {
+    Logger.log("handleTraining3GetOrAssign failed: " + err);
+    return { ok: false, message: "Unable to assign Training 3 clips." };
+  }
+}
+
+function readTraining3ClipsForEmail_(targetEmail) {
+  const clips = [];
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TRAINING3_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return clips;
+
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, TRAINING3_HEADERS.length).getValues();
+  values.forEach((r) => {
+    const rowEmail = normalizeEmail(r[COL.email]);
+    if (!targetEmail || rowEmail === targetEmail) {
+      if (String(r[COL.skipped] || "") === "Yes") return;
+      clips.push(mapPracticeLikeRow_(r, String(r[28] || "")));
+    }
+  });
+  clips.sort((a, b) => parseDateValue_(b.clipSubmittedAt || b.timestamp) - parseDateValue_(a.clipSubmittedAt || a.timestamp));
+  return clips;
+}
+
+function mapPracticeLikeRow_(r, sessionId) {
+  return {
+    timestamp: r[0] ? (r[0] instanceof Date ? r[0].toISOString() : String(r[0])) : "",
+    name: String(r[1] || ""),
+    email: normalizeEmail(r[2]),
+    clipId: String(r[3] || ""),
+    workitem: String(r[4] || ""),
+    locale: String(r[5] || ""),
+    fileName: String(r[6] || ""),
+    spoken: String(r[7] || ""),
+    written: String(r[8] || ""),
+    incorrectText: String(r[9] || ""),
+    originalText: String(r[10] || ""),
+    speakerCount: r[11] !== "" ? Number(r[11]) : null,
+    playCount: r[COL.playCount] !== "" ? Number(r[COL.playCount]) : null,
+    timeSpentSec: r[COL.timeSec] !== "" ? Number(r[COL.timeSec]) : null,
+    sessionElapsedSec: r[23] !== "" ? Number(r[23]) : null,
+    clipStartedAt: String(r[COL.clipStartedAt] || ""),
+    clipSubmittedAt: String(r[25] || ""),
+    similarity: r[COL.similarity] !== "" && r[COL.similarity] != null ? Number(r[COL.similarity]) : null,
+    sessionId: sessionId || ""
+  };
+}
+
+function readPracticeClipsForEmail_(targetEmail) {
+  const clips = [];
+  if (!targetEmail) return clips;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(emailToSheetName(targetEmail));
+  if (!sheet || sheet.getLastRow() < 2) return clips;
+
+  const rows = getExistingDataRows(sheet);
+  rows.forEach((r) => {
+    clips.push(mapPracticeLikeRow_(r, ""));
+  });
+  clips.sort((a, b) => parseDateValue_(b.clipSubmittedAt || b.timestamp) - parseDateValue_(a.clipSubmittedAt || a.timestamp));
+  return clips;
+}
+
+function countTraining3ClipsForEmail_(email) {
+  return readTraining3ClipsForEmail_(normalizeEmail(email)).length;
+}
+
+function hasPracticeForEmail_(email) {
+  const targetEmail = normalizeEmail(email);
+  if (!targetEmail) return false;
+  const summary = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Summary");
+  if (summary && summary.getLastRow() > 1) {
+    const rows = summary.getRange(2, 1, summary.getLastRow() - 1, 4).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (normalizeEmail(rows[i][1]) === targetEmail && Number(rows[i][3]) > 0) {
+        return true;
+      }
+    }
+  }
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(emailToSheetName(targetEmail));
+  if (!sheet) return false;
+  return getExistingDataRows(sheet).length > 0;
+}
+
+function hasGuidelinesForEmail_(email) {
+  const targetEmail = normalizeEmail(email);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(GUIDELINES_MCQ_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return false;
+  const values = sheet.getRange(2, 3, sheet.getLastRow() - 1, 1).getValues();
+  return values.some((r) => normalizeEmail(r[0]) === targetEmail);
+}
+
+function hasAssessmentForEmail_(email) {
+  const targetEmail = normalizeEmail(email);
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ASSESSMENT_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return false;
+  const values = sheet.getRange(2, 3, sheet.getLastRow() - 1, 1).getValues();
+  return values.some((r) => normalizeEmail(r[0]) === targetEmail);
+}
+
+function deriveTraineeStage_(email) {
+  const e = normalizeEmail(email);
+  const stage1 = hasGuidelinesForEmail_(e);
+  const stage2 = hasAssessmentForEmail_(e);
+  const t3Count = countTraining3ClipsForEmail_(e);
+  const stage3 = t3Count >= TRAINING3_CLIP_PICK;
+  const stage4 = hasPracticeForEmail_(e);
+
+  let current = "Not started";
+  if (stage4) current = "Stage 4 — Practice complete";
+  else if (stage3) current = "Stage 3 — Training 3 complete";
+  else if (t3Count > 0) current = "Stage 3 — Training 3 in progress";
+  else if (stage2) current = "Stage 2 — Assessment complete";
+  else if (stage1) current = "Stage 1 — Guidelines complete";
+
+  return {
+    stage1Done: stage1,
+    stage2Done: stage2,
+    stage3Done: stage3,
+    stage3ClipCount: t3Count,
+    stage4Done: stage4,
+    currentStage: current
+  };
+}
+
+/* =========================================================
+   BATCHES
+   ========================================================= */
+
+const BATCHES_SHEET_NAME = "Batches";
+const BATCH_MEMBERS_SHEET_NAME = "BatchMembers";
+
+const BATCHES_HEADERS = [
+  "BatchId",
+  "Name",
+  "Description",
+  "CreatedAt",
+  "Status",
+  "CreatedBy"
+];
+
+const BATCH_MEMBERS_HEADERS = [
+  "BatchId",
+  "Email",
+  "Name",
+  "AddedAt"
+];
+
+function getOrCreateBatchesSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(BATCHES_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(BATCHES_SHEET_NAME);
+    sheet.appendRow(BATCHES_HEADERS);
+    sheet.getRange(1, 1, 1, BATCHES_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  } else if (sheet.getLastRow() < 1) {
+    sheet.appendRow(BATCHES_HEADERS);
+    sheet.getRange(1, 1, 1, BATCHES_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function getOrCreateBatchMembersSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(BATCH_MEMBERS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(BATCH_MEMBERS_SHEET_NAME);
+    sheet.appendRow(BATCH_MEMBERS_HEADERS);
+    sheet.getRange(1, 1, 1, BATCH_MEMBERS_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  } else if (sheet.getLastRow() < 1) {
+    sheet.appendRow(BATCH_MEMBERS_HEADERS);
+    sheet.getRange(1, 1, 1, BATCH_MEMBERS_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function handleAdminListBatches(token) {
+  try {
+    requireAdminToken_(token);
+    const sheet = getOrCreateBatchesSheet();
+    const membersSheet = getOrCreateBatchMembersSheet();
+    const memberCounts = {};
+    if (membersSheet.getLastRow() > 1) {
+      const mRows = membersSheet.getRange(2, 1, membersSheet.getLastRow() - 1, 1).getValues();
+      mRows.forEach((r) => {
+        const id = String(r[0] || "");
+        if (!id) return;
+        memberCounts[id] = (memberCounts[id] || 0) + 1;
+      });
+    }
+
+    const batches = [];
+    if (sheet.getLastRow() > 1) {
+      const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BATCHES_HEADERS.length).getValues();
+      rows.forEach((r) => {
+        const id = String(r[0] || "");
+        if (!id) return;
+        batches.push({
+          batchId: id,
+          name: String(r[1] || ""),
+          description: String(r[2] || ""),
+          createdAt: r[3] ? (r[3] instanceof Date ? r[3].toISOString() : String(r[3])) : "",
+          status: String(r[4] || "Active"),
+          createdBy: String(r[5] || ""),
+          traineeCount: memberCounts[id] || 0
+        });
+      });
+    }
+    batches.sort((a, b) => parseDateValue_(b.createdAt) - parseDateValue_(a.createdAt));
+    return { ok: true, batches: batches };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminListBatches failed: " + err);
+    return { ok: false, message: "Unable to list batches." };
+  }
+}
+
+function handleAdminCreateBatch(data) {
+  try {
+    requireAdminToken_(data.token);
+    const name = String(data.name || "").trim();
+    if (!name) {
+      return { ok: false, message: "Batch name is required." };
+    }
+    const description = String(data.description || "").trim();
+    const batchId = "batch-" + Utilities.getUuid().replace(/-/g, "").substring(0, 12);
+    const createdAt = new Date().toISOString();
+    const createdBy = String(data.createdBy || "").trim();
+    const sheet = getOrCreateBatchesSheet();
+    sheet.appendRow([batchId, name, description, createdAt, "Active", createdBy]);
+    return { ok: true, batchId: batchId };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminCreateBatch failed: " + err);
+    return { ok: false, message: "Unable to create batch." };
+  }
+}
+
+function findBatchRow_(sheet, batchId) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const values = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || "") === batchId) return i + 2;
+  }
+  return -1;
+}
+
+function handleAdminArchiveBatch(data) {
+  try {
+    requireAdminToken_(data.token);
+    const batchId = String(data.batchId || "").trim();
+    if (!batchId) return { ok: false, message: "Batch ID is required." };
+    const sheet = getOrCreateBatchesSheet();
+    const row = findBatchRow_(sheet, batchId);
+    if (row === -1) return { ok: false, message: "Batch not found." };
+    sheet.getRange(row, 5).setValue("Archived");
+    return { ok: true };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminArchiveBatch failed: " + err);
+    return { ok: false, message: "Unable to archive batch." };
+  }
+}
+
+function handleAdminListBatchMembers(token, batchId) {
+  try {
+    requireAdminToken_(token);
+    const id = String(batchId || "").trim();
+    if (!id) return { ok: false, message: "Batch ID is required." };
+
+    const sheet = getOrCreateBatchMembersSheet();
+    const members = [];
+    if (sheet.getLastRow() > 1) {
+      const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, BATCH_MEMBERS_HEADERS.length).getValues();
+      rows.forEach((r) => {
+        if (String(r[0] || "") !== id) return;
+        const email = normalizeEmail(r[1]);
+        const stage = deriveTraineeStage_(email);
+        members.push({
+          batchId: id,
+          email: email,
+          name: String(r[2] || ""),
+          addedAt: r[3] ? (r[3] instanceof Date ? r[3].toISOString() : String(r[3])) : "",
+          stage: stage
+        });
+      });
+    }
+    return { ok: true, batchId: id, members: members };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminListBatchMembers failed: " + err);
+    return { ok: false, message: "Unable to list batch members." };
+  }
+}
+
+function handleAdminAddBatchMembers(data) {
+  try {
+    requireAdminToken_(data.token);
+    const batchId = String(data.batchId || "").trim();
+    if (!batchId) return { ok: false, message: "Batch ID is required." };
+
+    const batchSheet = getOrCreateBatchesSheet();
+    if (findBatchRow_(batchSheet, batchId) === -1) {
+      return { ok: false, message: "Batch not found." };
+    }
+
+    const emails = Array.isArray(data.emails) ? data.emails : [];
+    if (!emails.length) return { ok: false, message: "Select at least one trainee." };
+
+    const usersByEmail = {};
+    readAllUsers().forEach((u) => {
+      usersByEmail[normalizeEmail(u.email)] = u;
+    });
+
+    const membersSheet = getOrCreateBatchMembersSheet();
+    const existing = {};
+    if (membersSheet.getLastRow() > 1) {
+      const rows = membersSheet.getRange(2, 1, membersSheet.getLastRow() - 1, 2).getValues();
+      rows.forEach((r) => {
+        if (String(r[0] || "") === batchId) {
+          existing[normalizeEmail(r[1])] = true;
+        }
+      });
+    }
+
+    let added = 0;
+    const now = new Date().toISOString();
+    emails.forEach((raw) => {
+      const email = normalizeEmail(raw);
+      if (!email || !isValidEmail(email) || existing[email]) return;
+      const user = usersByEmail[email];
+      if (!user) return;
+      membersSheet.appendRow([batchId, email, user.name || "", now]);
+      existing[email] = true;
+      added++;
+    });
+
+    return { ok: true, added: added };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminAddBatchMembers failed: " + err);
+    return { ok: false, message: "Unable to add batch members." };
+  }
+}
+
+function handleAdminRemoveBatchMember(data) {
+  try {
+    requireAdminToken_(data.token);
+    const batchId = String(data.batchId || "").trim();
+    const email = normalizeEmail(data.email);
+    if (!batchId || !email) return { ok: false, message: "Batch ID and email are required." };
+
+    const sheet = getOrCreateBatchMembersSheet();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { ok: false, message: "Member not found." };
+
+    const rows = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0] || "") === batchId && normalizeEmail(rows[i][1]) === email) {
+        sheet.deleteRow(i + 2);
+        return { ok: true };
+      }
+    }
+    return { ok: false, message: "Member not found." };
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminRemoveBatchMember failed: " + err);
+    return { ok: false, message: "Unable to remove batch member." };
+  }
+}
+
+function handleAdminMoveBatchMember(data) {
+  try {
+    requireAdminToken_(data.token);
+    const fromBatchId = String(data.fromBatchId || "").trim();
+    const toBatchId = String(data.toBatchId || "").trim();
+    const email = normalizeEmail(data.email);
+    if (!fromBatchId || !toBatchId || !email) {
+      return { ok: false, message: "From batch, to batch, and email are required." };
+    }
+    if (fromBatchId === toBatchId) return { ok: true };
+
+    const batchSheet = getOrCreateBatchesSheet();
+    if (findBatchRow_(batchSheet, toBatchId) === -1) {
+      return { ok: false, message: "Target batch not found." };
+    }
+
+    const removeResult = handleAdminRemoveBatchMember({
+      token: data.token,
+      batchId: fromBatchId,
+      email: email
+    });
+    if (!removeResult.ok) return removeResult;
+
+    return handleAdminAddBatchMembers({
+      token: data.token,
+      batchId: toBatchId,
+      emails: [email]
+    });
+  } catch (err) {
+    if (String(err.message || err) === "Unauthorized") {
+      return { ok: false, message: "Unauthorized." };
+    }
+    Logger.log("handleAdminMoveBatchMember failed: " + err);
+    return { ok: false, message: "Unable to move batch member." };
   }
 }
 

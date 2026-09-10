@@ -280,15 +280,23 @@
       </div>
     </div>
 
-    <!-- Two Navigation Tabs: Assessment (Default) & Guidelines MCQ -->
+    <!-- Four Navigation Tabs -->
     <div class="tabs-bar">
       <button type="button" class="tab-btn active" id="tabBtnAssessment" onclick="switchReportTab('assessment')">
-        <span>Assessment Submissions</span>
+        <span>Assessment</span>
         <span class="tab-badge" id="assessmentCountBadge">…</span>
       </button>
       <button type="button" class="tab-btn" id="tabBtnGuidelines" onclick="switchReportTab('guidelines')">
-        <span>Guidelines MCQ Submissions</span>
+        <span>Guidelines MCQ</span>
         <span class="tab-badge" id="guidelinesCountBadge">…</span>
+      </button>
+      <button type="button" class="tab-btn" id="tabBtnTraining3" onclick="switchReportTab('training3')">
+        <span>Training 3</span>
+        <span class="tab-badge" id="training3CountBadge">…</span>
+      </button>
+      <button type="button" class="tab-btn" id="tabBtnPractice" onclick="switchReportTab('practice')">
+        <span>Training (Stage 4)</span>
+        <span class="tab-badge" id="practiceCountBadge">…</span>
       </button>
     </div>
 
@@ -313,6 +321,28 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab 3 Content: Training 3 -->
+    <div id="tabContentTraining3" class="hidden">
+      <div id="training3ViewArea">
+        <div class="loader-card">
+          <div class="spinner"></div>
+          <h4>Loading Training 3 Submissions...</h4>
+          <p>Connecting to Google Sheets...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4 Content: Practice Stage 4 -->
+    <div id="tabContentPractice" class="hidden">
+      <div id="practiceViewArea">
+        <div class="loader-card">
+          <div class="spinner"></div>
+          <h4>Loading Practice Submissions...</h4>
+          <p>Connecting to Google Sheets...</p>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -326,7 +356,7 @@ const ADMIN_TOKEN_EXP_KEY = "argos_admin_token_exp";
 
 let usersList = [];
 let currentEmail = "";
-let currentReportsData = { assessments: [], guidelines: [] };
+let currentReportsData = { assessments: [], guidelines: [], training3: [], practice: [] };
 let selectedAssessmentIndex = 0;
 let selectedGuidelinesIndex = 0;
 let currentActiveTab = "assessment";
@@ -592,6 +622,14 @@ async function initDashboard() {
     "Loading Guidelines MCQ Submissions...",
     "Connecting to Google Sheets to retrieve registered trainees..."
   );
+  document.getElementById("training3ViewArea").innerHTML = renderInitialLoader(
+    "Loading Training 3...",
+    "Connecting to Google Sheets..."
+  );
+  document.getElementById("practiceViewArea").innerHTML = renderInitialLoader(
+    "Loading Practice...",
+    "Connecting to Google Sheets..."
+  );
 
   try {
     usersList = await apiGetUsers(token);
@@ -604,8 +642,11 @@ async function initDashboard() {
 
     if (!usersList.length) {
       select.innerHTML = '<option value="">No registered users found</option>';
-      document.getElementById("assessmentViewArea").innerHTML = '<div class="empty-report"><h4>No Registered Users Found</h4><p>Add trainees via the User Admin panel first.</p></div>';
-      document.getElementById("guidelinesViewArea").innerHTML = '<div class="empty-report"><h4>No Registered Users Found</h4><p>Add trainees via the User Admin panel first.</p></div>';
+      const emptyHtml = '<div class="empty-report"><h4>No Registered Users Found</h4><p>Add trainees via the User Admin panel first.</p></div>';
+      document.getElementById("assessmentViewArea").innerHTML = emptyHtml;
+      document.getElementById("guidelinesViewArea").innerHTML = emptyHtml;
+      document.getElementById("training3ViewArea").innerHTML = emptyHtml;
+      document.getElementById("practiceViewArea").innerHTML = emptyHtml;
       return;
     }
 
@@ -633,8 +674,11 @@ async function initDashboard() {
       return;
     }
     showToast(err.message || "Could not load users.", "error");
-    document.getElementById("assessmentViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading users</h4><p>${escapeHtml(err.message)}</p></div>`;
-    document.getElementById("guidelinesViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading users</h4><p>${escapeHtml(err.message)}</p></div>`;
+    const errHtml = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading users</h4><p>${escapeHtml(err.message)}</p></div>`;
+    document.getElementById("assessmentViewArea").innerHTML = errHtml;
+    document.getElementById("guidelinesViewArea").innerHTML = errHtml;
+    document.getElementById("training3ViewArea").innerHTML = errHtml;
+    document.getElementById("practiceViewArea").innerHTML = errHtml;
   }
 }
 
@@ -665,6 +709,8 @@ async function loadUserSubmissions(email) {
   document.getElementById("selectedUserEmail").innerHTML = '<span class="spinner-sm"></span> Loading submissions...';
   document.getElementById("assessmentCountBadge").textContent = "…";
   document.getElementById("guidelinesCountBadge").textContent = "…";
+  document.getElementById("training3CountBadge").textContent = "…";
+  document.getElementById("practiceCountBadge").textContent = "…";
   document.getElementById("assessmentViewArea").innerHTML = renderInitialLoader(
     "Loading Assessment Submissions...",
     `Retrieving test attempts for ${displayName}`
@@ -673,24 +719,40 @@ async function loadUserSubmissions(email) {
     "Loading Guidelines Submissions...",
     `Retrieving quiz attempts for ${displayName}`
   );
+  document.getElementById("training3ViewArea").innerHTML = renderInitialLoader(
+    "Loading Training 3...",
+    `Retrieving Training 3 clips for ${displayName}`
+  );
+  document.getElementById("practiceViewArea").innerHTML = renderInitialLoader(
+    "Loading Practice...",
+    `Retrieving Stage 4 practice clips for ${displayName}`
+  );
 
   try {
     const data = await apiGetSubmissions(token, email);
     currentReportsData = {
       assessments: Array.isArray(data.assessments) ? data.assessments : [],
-      guidelines: Array.isArray(data.guidelines) ? data.guidelines : []
+      guidelines: Array.isArray(data.guidelines) ? data.guidelines : [],
+      training3: Array.isArray(data.training3) ? data.training3 : [],
+      practice: Array.isArray(data.practice) ? data.practice : []
     };
 
     document.getElementById("assessmentCountBadge").textContent = currentReportsData.assessments.length;
     document.getElementById("guidelinesCountBadge").textContent = currentReportsData.guidelines.length;
+    document.getElementById("training3CountBadge").textContent = currentReportsData.training3.length;
+    document.getElementById("practiceCountBadge").textContent = currentReportsData.practice.length;
 
     renderAssessmentTab();
     renderGuidelinesTab();
+    renderPracticeClipsTab("training3");
+    renderPracticeClipsTab("practice");
   } catch (err) {
     console.error(err);
     showToast(err.message || "Could not load submissions.", "error");
     document.getElementById("assessmentViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading submissions</h4><p>${escapeHtml(err.message)}</p></div>`;
     document.getElementById("guidelinesViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading submissions</h4><p>${escapeHtml(err.message)}</p></div>`;
+    document.getElementById("training3ViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading submissions</h4><p>${escapeHtml(err.message)}</p></div>`;
+    document.getElementById("practiceViewArea").innerHTML = `<div class="empty-report"><h4 style="color:var(--danger)">Error loading submissions</h4><p>${escapeHtml(err.message)}</p></div>`;
   } finally {
     if (userSelect) userSelect.disabled = false;
     document.getElementById("selectedUserEmail").innerHTML = `<span class="dot"></span> ${escapeHtml(displayName)}`;
@@ -699,13 +761,19 @@ async function loadUserSubmissions(email) {
 
 function switchReportTab(tab) {
   currentActiveTab = tab;
-  const isAssessment = tab === "assessment";
-
-  document.getElementById("tabBtnAssessment").classList.toggle("active", isAssessment);
-  document.getElementById("tabBtnGuidelines").classList.toggle("active", !isAssessment);
-
-  document.getElementById("tabContentAssessment").classList.toggle("hidden", !isAssessment);
-  document.getElementById("tabContentGuidelines").classList.toggle("hidden", isAssessment);
+  const tabs = ["assessment", "guidelines", "training3", "practice"];
+  tabs.forEach((t) => {
+    const btnId = t === "training3" ? "tabBtnTraining3"
+      : t === "practice" ? "tabBtnPractice"
+      : t === "guidelines" ? "tabBtnGuidelines"
+      : "tabBtnAssessment";
+    const contentId = t === "training3" ? "tabContentTraining3"
+      : t === "practice" ? "tabContentPractice"
+      : t === "guidelines" ? "tabContentGuidelines"
+      : "tabContentAssessment";
+    document.getElementById(btnId).classList.toggle("active", t === tab);
+    document.getElementById(contentId).classList.toggle("hidden", t !== tab);
+  });
 }
 
 function changeAssessmentAttempt(index) {
@@ -1066,6 +1134,74 @@ function renderGuidelinesTab() {
     ${summaryHtml}
     <div class="feedback-section" style="margin-top:16px;">
       <h3>Questions & Answers</h3>
+      ${itemsHtml}
+    </div>
+  `;
+}
+
+function practiceClipsAvgSimilarity(list) {
+  const sims = (list || [])
+    .map((c) => c.similarity)
+    .filter((v) => v != null && !isNaN(Number(v)))
+    .map((v) => Number(v));
+  if (!sims.length) return null;
+  return Math.round(sims.reduce((s, v) => s + v, 0) / sims.length);
+}
+
+function renderPracticeClipsTab(kind) {
+  const isTraining3 = kind === "training3";
+  const area = document.getElementById(isTraining3 ? "training3ViewArea" : "practiceViewArea");
+  const list = isTraining3
+    ? (currentReportsData.training3 || [])
+    : (currentReportsData.practice || []);
+  const title = isTraining3 ? "Training 3" : "Practice (Stage 4)";
+
+  if (!list.length) {
+    area.innerHTML = `
+      <div class="empty-report">
+        <h4>No ${escapeHtml(title)} Submissions Found</h4>
+        <p>This trainee has not submitted any ${escapeHtml(title)} clips yet.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const avg = practiceClipsAvgSimilarity(list);
+  const summaryHtml = `
+    <div class="score-summary-grid">
+      <div class="score-box highlight">
+        <div class="score-box-num">${list.length}</div>
+        <div class="score-box-lbl">Clips Submitted</div>
+      </div>
+      <div class="score-box">
+        <div class="score-box-num">${avg != null ? avg + "%" : "—"}</div>
+        <div class="score-box-lbl">Avg Similarity</div>
+      </div>
+    </div>
+  `;
+
+  const itemsHtml = list.map((d, i) => {
+    const sim = d.similarity != null ? `${d.similarity}%` : "—";
+    const diff = renderTypedDiff(d.written || "", d.originalText || "");
+    return `
+      <div class="feedback-card" style="margin-bottom:12px;padding:14px;border:1px solid var(--border);border-radius:10px;background:white;">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px;">
+          <strong>Clip ${i + 1}: ${escapeHtml(d.clipId || "")}</strong>
+          <span style="font-size:12px;color:var(--text-muted);">${escapeHtml(formatDateTime(d.clipSubmittedAt || d.timestamp))} · Similarity ${escapeHtml(sim)}</span>
+        </div>
+        <div class="feedback-label">Written</div>
+        <div class="feedback-text" style="margin-bottom:8px;">${diff.answerHtml}</div>
+        <div class="feedback-label">Original</div>
+        <div class="feedback-text">${diff.correctHtml}</div>
+        ${d.spoken ? `<div class="feedback-label" style="margin-top:8px;">Spoken</div><div class="feedback-text">${escapeHtml(d.spoken)}</div>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  area.innerHTML = `
+    ${summaryHtml}
+    <div class="feedback-section" style="margin-top:16px;">
+      <h3>${escapeHtml(title)} Clips</h3>
       ${itemsHtml}
     </div>
   `;

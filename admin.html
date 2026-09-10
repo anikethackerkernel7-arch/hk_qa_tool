@@ -119,14 +119,73 @@
     background: #0f172a; color: white; border-radius: 8px; font-size: 13px;
     opacity: 0; transform: translateY(8px); transition: all 0.2s; pointer-events: none; z-index: 100;
   }
-  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .toast.error { background: var(--danger); }
+  .toast.success { background: var(--success); }
   .spinner-sm {
-    width: 14px; height: 14px; border: 2px solid #cbd5e1; border-top-color: var(--primary);
-    border-radius: 50%; display: inline-block; animation: spin 0.75s linear infinite;
-    vertical-align: middle; margin-right: 6px;
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid #cbd5e1; border-top-color: var(--primary);
+    border-radius: 50%; animation: spin 0.7s linear infinite; vertical-align: middle;
   }
-  @keyframes spin {
-    to { transform: rotate(360deg); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  select {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 14px; font-family: inherit; background: white;
+  }
+  select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(13,148,136,0.12); }
+  select[multiple] { min-height: 140px; }
+  .batch-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .batch-layout { grid-template-columns: 1fr; }
+    .form-row { grid-template-columns: 1fr; }
+  }
+  .batch-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    background: #fff;
+  }
+  .batch-item:hover { border-color: var(--primary); }
+  .batch-item.active {
+    border-color: var(--primary);
+    background: #f0fdfa;
+  }
+  .batch-item-title { font-weight: 700; margin-bottom: 4px; }
+  .batch-item-meta { font-size: 12px; color: var(--text-muted); }
+  .stage-pill {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    font-size: 12px;
+    line-height: 1.35;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #ecfeff;
+    color: #0f766e;
+    border: 1px solid #99f6e4;
+    white-space: normal;
+    text-align: left;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  #batchMembersBody td:nth-child(3) {
+    min-width: 180px;
+    max-width: 240px;
+    vertical-align: middle;
+  }
+  #batchMembersBody td:nth-child(4) .btn {
+    white-space: nowrap;
+  }
+  textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 70px;
   }
   @media (max-width: 800px) {
     .form-row { grid-template-columns: 1fr; }
@@ -203,6 +262,65 @@
         </table>
       </div>
     </div>
+
+    <div class="panel">
+      <div class="panel-title">Trainee batches</div>
+      <div class="form-row" style="grid-template-columns: 1fr 1.2fr auto; margin-bottom: 16px;">
+        <div class="field" style="margin:0">
+          <label class="field-label" for="batchName">Batch name</label>
+          <input type="text" id="batchName" placeholder="Batch A — March" />
+        </div>
+        <div class="field" style="margin:0">
+          <label class="field-label" for="batchDescription">Notes (optional)</label>
+          <input type="text" id="batchDescription" placeholder="Optional description" />
+        </div>
+        <button class="btn btn-primary" id="createBatchBtn" style="width:auto" onclick="createBatch()">Create batch</button>
+      </div>
+
+      <div class="batch-layout">
+        <div>
+          <div class="field-label" style="margin-bottom:8px;">Batches</div>
+          <div id="batchesList">
+            <div class="empty-state"><span class="spinner-sm"></span> Loading batches...</div>
+          </div>
+        </div>
+        <div>
+          <div id="batchDetailEmpty" class="empty-state">Select a batch to manage trainees.</div>
+          <div id="batchDetail" class="hidden">
+            <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start; margin-bottom:12px; flex-wrap:wrap;">
+              <div>
+                <div class="batch-item-title" id="batchDetailTitle">—</div>
+                <div class="batch-item-meta" id="batchDetailMeta">—</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" id="archiveBatchBtn" onclick="archiveSelectedBatch()">Archive batch</button>
+            </div>
+
+            <div class="field">
+              <label class="field-label" for="batchMemberSelect">Add trainees (multi-select)</label>
+              <select id="batchMemberSelect" multiple></select>
+              <div class="field-label" style="font-weight:500;color:var(--text-muted);margin-top:6px;">Hold Ctrl/Cmd to select multiple enabled users.</div>
+            </div>
+            <button class="btn btn-primary" id="addBatchMembersBtn" style="width:auto;margin-bottom:16px;" onclick="addSelectedBatchMembers()">Add selected</button>
+
+            <div class="users-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Name</th>
+                    <th>Current stage</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="batchMembersBody">
+                  <tr><td colspan="4" class="empty-state">No members yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -214,6 +332,9 @@ const ADMIN_TOKEN_KEY = "argos_admin_token";
 const ADMIN_TOKEN_EXP_KEY = "argos_admin_token_exp";
 
 let users = [];
+let batches = [];
+let selectedBatchId = "";
+let batchMembers = [];
 
 function showToast(msg, type) {
   const t = document.getElementById("toast");
@@ -275,6 +396,30 @@ async function apiGetUsers(token) {
   return data.users || [];
 }
 
+async function apiGetBatches(token) {
+  const url = SHEETS_ENDPOINT + "?action=admin_batches&token=" + encodeURIComponent(token);
+  const res = await fetch(url, { method: "GET" });
+  if (!res.ok) throw new Error("Could not load batches.");
+  const data = await res.json();
+  if (!data || data.ok !== true) {
+    throw new Error((data && data.message) || "Could not load batches.");
+  }
+  return data.batches || [];
+}
+
+async function apiGetBatchMembers(token, batchId) {
+  const url = SHEETS_ENDPOINT
+    + "?action=admin_batch_members&token=" + encodeURIComponent(token)
+    + "&batchId=" + encodeURIComponent(batchId);
+  const res = await fetch(url, { method: "GET" });
+  if (!res.ok) throw new Error("Could not load batch members.");
+  const data = await res.json();
+  if (!data || data.ok !== true) {
+    throw new Error((data && data.message) || "Could not load batch members.");
+  }
+  return data.members || [];
+}
+
 function escapeHtml(str) {
   return String(str || "")
     .replace(/&/g, "&amp;")
@@ -322,15 +467,41 @@ async function loadUsers() {
   if (tbody) {
     tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><span class="spinner-sm"></span> Loading users...</td></tr>';
   }
+  const list = document.getElementById("batchesList");
+  if (list) {
+    list.innerHTML = '<div class="empty-state"><span class="spinner-sm"></span> Loading batches...</div>';
+  }
 
   try {
-    users = await apiGetUsers(token);
+    // Users + batches in parallel; members still load after a batch is selected
+    const [usersResult, batchesResult] = await Promise.all([
+      apiGetUsers(token),
+      apiGetBatches(token)
+    ]);
+
+    users = usersResult;
     users.sort((a, b) => {
       const nameA = String(a.name || a.email || "").trim().toLowerCase();
       const nameB = String(b.name || b.email || "").trim().toLowerCase();
       return nameA.localeCompare(nameB);
     });
+    batches = batchesResult;
+
     renderUsers();
+    renderBatches();
+    populateBatchMemberSelect();
+
+    if (selectedBatchId) {
+      const stillThere = batches.some((b) => b.batchId === selectedBatchId);
+      if (stillThere) {
+        await loadBatchMembers(selectedBatchId);
+      } else {
+        selectedBatchId = "";
+        batchMembers = [];
+        document.getElementById("batchDetail").classList.add("hidden");
+        document.getElementById("batchDetailEmpty").classList.remove("hidden");
+      }
+    }
   } catch (err) {
     console.error(err);
     if (String(err.message || "").toLowerCase().includes("unauthorized")) {
@@ -340,6 +511,276 @@ async function loadUsers() {
       return;
     }
     showToast(err.message || "Could not load users.", "error");
+  }
+}
+
+function populateBatchMemberSelect() {
+  const select = document.getElementById("batchMemberSelect");
+  if (!select) return;
+  const memberEmails = new Set(batchMembers.map((m) => String(m.email || "").toLowerCase()));
+  const enabledUsers = users.filter((u) => u.enabled !== false);
+  select.innerHTML = enabledUsers.map((u) => {
+    const email = String(u.email || "");
+    const disabled = memberEmails.has(email.toLowerCase()) ? "disabled" : "";
+    return `<option value="${escapeHtml(email)}" ${disabled}>${escapeHtml(u.name || email)} (${escapeHtml(email)})</option>`;
+  }).join("");
+}
+
+function renderBatches() {
+  const list = document.getElementById("batchesList");
+  if (!list) return;
+  if (!batches.length) {
+    list.innerHTML = '<div class="empty-state">No batches yet. Create one above.</div>';
+    return;
+  }
+  list.innerHTML = batches.map((b) => {
+    const active = b.batchId === selectedBatchId ? "active" : "";
+    const status = String(b.status || "Active");
+    return `
+      <div class="batch-item ${active}" onclick="selectBatch('${escapeHtml(b.batchId)}')">
+        <div class="batch-item-title">${escapeHtml(b.name || b.batchId)}</div>
+        <div class="batch-item-meta">
+          ${escapeHtml(status)} · ${Number(b.traineeCount) || 0} trainee(s)
+          ${b.description ? " · " + escapeHtml(b.description) : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderBatchMembers() {
+  const tbody = document.getElementById("batchMembersBody");
+  if (!tbody) return;
+  if (!batchMembers.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No members in this batch.</td></tr>';
+    return;
+  }
+  const otherBatches = batches.filter((b) => b.batchId !== selectedBatchId && b.status !== "Archived");
+  tbody.innerHTML = batchMembers.map((m, index) => {
+    const stageLabel = (m.stage && m.stage.currentStage) ? m.stage.currentStage : "Not started";
+    const moveOptions = otherBatches.map((b) =>
+      `<option value="${escapeHtml(b.batchId)}">${escapeHtml(b.name || b.batchId)}</option>`
+    ).join("");
+    return `
+      <tr>
+        <td>${escapeHtml(m.email)}</td>
+        <td>${escapeHtml(m.name)}</td>
+        <td><span class="stage-pill">${escapeHtml(stageLabel)}</span></td>
+        <td>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <a href="reports.html?email=${encodeURIComponent(m.email)}" class="btn btn-outline btn-sm" style="text-decoration:none;">View Report</a>
+            ${otherBatches.length ? `
+              <select data-index="${index}" onchange="moveBatchMemberByIndex(this)" style="width:auto;min-width:140px;padding:6px 8px;">
+                <option value="">Move to…</option>
+                ${moveOptions}
+              </select>
+            ` : ""}
+            <button class="btn btn-danger btn-sm" data-index="${index}" onclick="removeBatchMemberByIndex(this)">Remove</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function loadBatches() {
+  const token = getAdminToken();
+  if (!token) return;
+  const list = document.getElementById("batchesList");
+  if (list && !batches.length) {
+    list.innerHTML = '<div class="empty-state"><span class="spinner-sm"></span> Loading batches...</div>';
+  }
+  try {
+    batches = await apiGetBatches(token);
+    renderBatches();
+    if (selectedBatchId) {
+      const stillThere = batches.some((b) => b.batchId === selectedBatchId);
+      if (stillThere) {
+        await loadBatchMembers(selectedBatchId);
+      } else {
+        selectedBatchId = "";
+        batchMembers = [];
+        document.getElementById("batchDetail").classList.add("hidden");
+        document.getElementById("batchDetailEmpty").classList.remove("hidden");
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not load batches.", "error");
+  }
+}
+
+async function selectBatch(batchId) {
+  selectedBatchId = String(batchId || "");
+  renderBatches();
+  await loadBatchMembers(selectedBatchId);
+}
+
+async function loadBatchMembers(batchId) {
+  const token = getAdminToken();
+  if (!token || !batchId) return;
+
+  const batch = batches.find((b) => b.batchId === batchId);
+  document.getElementById("batchDetailEmpty").classList.add("hidden");
+  document.getElementById("batchDetail").classList.remove("hidden");
+  document.getElementById("batchDetailTitle").textContent = batch ? (batch.name || batchId) : batchId;
+  document.getElementById("batchDetailMeta").textContent = batch
+    ? `${batch.status || "Active"} · created ${batch.createdAt ? new Date(batch.createdAt).toLocaleString() : "—"}`
+    : "";
+  const archiveBtn = document.getElementById("archiveBatchBtn");
+  if (archiveBtn) {
+    archiveBtn.disabled = batch && batch.status === "Archived";
+    archiveBtn.textContent = batch && batch.status === "Archived" ? "Archived" : "Archive batch";
+  }
+
+  const tbody = document.getElementById("batchMembersBody");
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state"><span class="spinner-sm"></span> Loading members...</td></tr>';
+  }
+
+  try {
+    batchMembers = await apiGetBatchMembers(token, batchId);
+    renderBatchMembers();
+    populateBatchMemberSelect();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not load members.", "error");
+  }
+}
+
+async function createBatch() {
+  const token = getAdminToken();
+  if (!token) {
+    showLogin();
+    return;
+  }
+  const name = document.getElementById("batchName").value.trim();
+  const description = document.getElementById("batchDescription").value.trim();
+  if (!name) {
+    showToast("Batch name is required.", "error");
+    return;
+  }
+  const btn = document.getElementById("createBatchBtn");
+  btn.disabled = true;
+  try {
+    const data = await apiPost({
+      action: "admin_create_batch",
+      token,
+      name,
+      description,
+      createdBy: document.getElementById("adminEmail").value.trim() || ""
+    });
+    document.getElementById("batchName").value = "";
+    document.getElementById("batchDescription").value = "";
+    showToast("Batch created.", "success");
+    await loadBatches();
+    if (data.batchId) await selectBatch(data.batchId);
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not create batch.", "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function archiveSelectedBatch() {
+  const token = getAdminToken();
+  if (!token || !selectedBatchId) return;
+  if (!confirm("Archive this batch? You can still view it, but it will be marked Archived.")) return;
+  try {
+    await apiPost({
+      action: "admin_archive_batch",
+      token,
+      batchId: selectedBatchId
+    });
+    showToast("Batch archived.", "success");
+    await loadBatches();
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not archive batch.", "error");
+  }
+}
+
+async function addSelectedBatchMembers() {
+  const token = getAdminToken();
+  if (!token || !selectedBatchId) {
+    showToast("Select a batch first.", "error");
+    return;
+  }
+  const select = document.getElementById("batchMemberSelect");
+  const emails = Array.from(select.selectedOptions)
+    .filter((o) => !o.disabled)
+    .map((o) => o.value);
+  if (!emails.length) {
+    showToast("Select at least one trainee.", "error");
+    return;
+  }
+  const btn = document.getElementById("addBatchMembersBtn");
+  btn.disabled = true;
+  try {
+    const data = await apiPost({
+      action: "admin_add_batch_members",
+      token,
+      batchId: selectedBatchId,
+      emails
+    });
+    showToast(`Added ${data.added || 0} trainee(s).`, "success");
+    await loadBatches();
+    await loadBatchMembers(selectedBatchId);
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not add members.", "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function removeBatchMemberByIndex(btn) {
+  const token = getAdminToken();
+  if (!token || !selectedBatchId) return;
+  const index = Number(btn.getAttribute("data-index"));
+  const member = batchMembers[index];
+  if (!member) return;
+  if (!confirm(`Remove ${member.email} from this batch?`)) return;
+  try {
+    await apiPost({
+      action: "admin_remove_batch_member",
+      token,
+      batchId: selectedBatchId,
+      email: member.email
+    });
+    showToast("Member removed.", "success");
+    await loadBatches();
+    await loadBatchMembers(selectedBatchId);
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not remove member.", "error");
+  }
+}
+
+async function moveBatchMemberByIndex(selectEl) {
+  const token = getAdminToken();
+  if (!token || !selectedBatchId) return;
+  const toBatchId = selectEl.value;
+  if (!toBatchId) return;
+  const index = Number(selectEl.getAttribute("data-index"));
+  const member = batchMembers[index];
+  if (!member) return;
+  try {
+    await apiPost({
+      action: "admin_move_batch_member",
+      token,
+      fromBatchId: selectedBatchId,
+      toBatchId,
+      email: member.email
+    });
+    showToast("Member moved.", "success");
+    await loadBatches();
+    await loadBatchMembers(selectedBatchId);
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not move member.", "error");
+    selectEl.value = "";
   }
 }
 
@@ -394,6 +835,9 @@ async function adminLogin() {
 function adminLogout() {
   clearAdminSession();
   users = [];
+  batches = [];
+  batchMembers = [];
+  selectedBatchId = "";
   showLogin();
   showToast("Logged out.", "success");
 }

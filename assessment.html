@@ -605,30 +605,18 @@ function normalizeText(s) {
   return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-function levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  if (!m) return n;
-  if (!n) return m;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
-    }
-  }
-  return dp[m][n];
-}
-
+/** Word-level LCS: matched / (matched + missing + extra) * 100 */
 function similarityPercent(answer, gold) {
-  const a = normalizeText(answer);
-  const g = normalizeText(gold);
-  if (!a) return 0;
-  if (!g) return 0;
-  const maxLen = Math.max(a.length, g.length);
-  if (!maxLen) return 100;
-  return Math.round((1 - levenshtein(a, g) / maxLen) * 100);
+  const aToks = tokenizeWords(answer);
+  const gToks = tokenizeWords(gold);
+  if (!aToks.length || !gToks.length) return 0;
+  const { matchedA, matchedC } = wordDiffMatches(aToks, gToks);
+  const matched = matchedC.filter(Boolean).length;
+  const missing = matchedC.length - matched;
+  const extra = matchedA.length - matchedA.filter(Boolean).length;
+  const denom = matched + missing + extra;
+  if (!denom) return 0;
+  return Math.round((matched / denom) * 100);
 }
 
 function updatePlayButtons(playingPath) {

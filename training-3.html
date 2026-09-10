@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Argos Training — 4</title>
+<title>Argos Training — Training 3</title>
 <style>
   :root {
     --bg: #f8fafc;
@@ -585,8 +585,8 @@
 <div id="loginScreen" class="login-screen">
   <div class="login-card">
     <div class="login-logo">◈</div>
-    <div class="login-title">Argos Training</div>
-    <div class="login-sub">Enter your registered work email to begin your transcription practice session.</div>
+    <div class="login-title">Argos Training 3</div>
+    <div class="login-sub">Enter your registered work email to begin Training 3 (early transcription practice — 20 clips).</div>
     <div class="field">
       <label class="field-label" for="emailInput">Email address</label>
       <input type="email" id="emailInput" placeholder="name@company.com" autocomplete="email" />
@@ -615,7 +615,7 @@
       <div class="brand-icon">◈</div>
       <span>Argos Training</span>
       <span class="brand-sep">›</span>
-      <span class="brand-tag">Transcription Practice</span>
+      <span class="brand-tag">Training 3</span>
     </div>
     <div class="header-right">
       <div class="user-chip">
@@ -777,7 +777,7 @@
     <div class="complete-icon">✓</div>
     <h2 style="margin-bottom:8px;">Session complete</h2>
     <p style="color:var(--text-muted); margin-bottom:24px;">
-      You've submitted all <span id="totalSubmitted">0</span> clips. Your responses have been saved for trainer review.
+      You've submitted all <span id="totalSubmitted">0</span> Training 3 clips. Your responses have been saved for trainer review.
     </p>
     <button class="btn btn-primary" onclick="resetSession()">Start new session</button>
   </div>
@@ -881,7 +881,7 @@ const AUDIO_QUEUE = [
   { id: "clip_82", file: "audio/clip_82.mp3", workitem: "trn-082-x52", locale: "en_US" },
 ];
 
-const TRAINING_CLIP_PICK = 25;
+const TRAINING_CLIP_PICK = 20;
 
 function shuffleCopy(arr) {
   const a = Array.isArray(arr) ? arr.slice() : [];
@@ -894,24 +894,12 @@ function shuffleCopy(arr) {
   return a;
 }
 
-function buildClipOrder(excludeIds) {
-  const exclude = new Set(
-    Array.isArray(excludeIds) ? excludeIds.map((id) => String(id || "")) : []
-  );
-  const pool = AUDIO_QUEUE.map((clip) => clip.id).filter((id) => !exclude.has(id));
-  if (exclude.size > 0) {
-    // Training 3 assignment exists — use full remaining pool
-    return shuffleCopy(pool);
-  }
-  return shuffleCopy(pool).slice(0, TRAINING_CLIP_PICK);
-}
-
 function clipById(id) {
   return AUDIO_QUEUE.find((clip) => clip.id === id) || null;
 }
 
 function getSessionClipCount() {
-  return Array.isArray(state.clipOrder) ? state.clipOrder.length : AUDIO_QUEUE.length;
+  return Array.isArray(state.clipOrder) ? state.clipOrder.length : TRAINING_CLIP_PICK;
 }
 
 function getClipAtIndex(index) {
@@ -921,58 +909,55 @@ function getClipAtIndex(index) {
   return clipById(state.clipOrder[index]);
 }
 
-function ensureClipOrder(savedOrder, excludeIds) {
-  const exclude = new Set(
-    Array.isArray(excludeIds) ? excludeIds.map((id) => String(id || "")) : []
-  );
-  const allIds = AUDIO_QUEUE.map((clip) => clip.id).filter((id) => !exclude.has(id));
-  const allowedSet = new Set(allIds);
+function ensureClipOrder(savedOrder, assignedIds) {
+  const allowed = Array.isArray(assignedIds) && assignedIds.length
+    ? assignedIds
+    : AUDIO_QUEUE.map((clip) => clip.id);
+  const allowedSet = new Set(allowed);
   const order = Array.isArray(savedOrder)
-    ? savedOrder.filter((id) => allowedSet.has(id))
+    ? savedOrder.filter((id) => allowedSet.has(id) && clipById(id))
     : [];
-
-  if (exclude.size > 0) {
-    // Full remaining pool for Stage 4 after Training 3
-    if (!order.length) return buildClipOrder(excludeIds);
-    // Keep saved order; append any missing remaining ids so pool stays complete
-    const seen = new Set(order);
-    allIds.forEach((id) => {
-      if (!seen.has(id)) order.push(id);
-    });
+  if (order.length === allowed.length && allowed.length) {
     return order;
   }
-
-  // Legacy / no Training 3: pick 25; rebuild if empty or legacy full-pool order
-  if (!order.length || order.length > TRAINING_CLIP_PICK) {
-    return buildClipOrder([]);
-  }
-
-  return order;
+  return allowed.slice();
 }
 
-async function fetchTraining3ExcludeIds(email) {
+async function fetchOrAssignTraining3Clips(email) {
   if (!SHEETS_ENDPOINT || SHEETS_ENDPOINT.includes("PASTE_YOUR")) {
-    return [];
+    throw new Error("Sheets endpoint is not configured.");
   }
-  try {
-    const url = SHEETS_ENDPOINT
-      + "?action=get_training3_assignment&email="
-      + encodeURIComponent(String(email || "").trim().toLowerCase());
-    const res = await fetch(url, { method: "GET" });
-    if (!res.ok) return [];
-    const data = await res.json();
-    if (!data || data.ok !== true || !Array.isArray(data.clipIds)) return [];
-    return data.clipIds.map((id) => String(id || "")).filter(Boolean);
-  } catch (err) {
-    console.error(err);
-    return [];
+  const poolClipIds = AUDIO_QUEUE.map((clip) => clip.id);
+  const res = await fetch(SHEETS_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      action: "training3_get_or_assign",
+      email: email,
+      poolClipIds: poolClipIds
+    })
+  });
+  if (!res.ok) {
+    throw new Error("Unable to assign Training 3 clips.");
   }
+  const data = await res.json();
+  if (!data || data.ok !== true || !Array.isArray(data.clipIds) || !data.clipIds.length) {
+    throw new Error((data && data.message) || "Unable to assign Training 3 clips.");
+  }
+  const validIds = data.clipIds.filter((id) => !!clipById(id));
+  if (validIds.length < TRAINING_CLIP_PICK) {
+    throw new Error("Training 3 assignment is incomplete. Contact your trainer.");
+  }
+  return {
+    clipIds: validIds.slice(0, TRAINING_CLIP_PICK),
+    sessionId: String(data.sessionId || "")
+  };
 }
 
 const NATIVITY_OPTIONS = ["Native", "Non-Native", "Unknown", "TTS"];
 const GENDER_OPTIONS = ["Male", "Female", "Unknown"];
 
-const SESSION_KEY = "argos_training_session";
+const SESSION_KEY = "argos_training3_session";
 const CLIP_TEXTS_URL = "clip-texts.json";
 let CLIP_TEXTS = {};
 
@@ -1020,7 +1005,8 @@ let state = {
   startedAt: null,
   clipStartedAt: null,
   briefingCompleted: false,
-  training3ExcludeIds: [],
+  sessionId: "",
+  assignedClipIds: [],
 };
 
 const audioEl = document.getElementById("audioEl");
@@ -1038,9 +1024,8 @@ function saveSession() {
     sessionStartTime: state.sessionStartTime,
     startedAt: state.startedAt || new Date().toISOString(),
     briefingCompleted: !!state.briefingCompleted,
-    training3ExcludeIds: Array.isArray(state.training3ExcludeIds)
-      ? state.training3ExcludeIds
-      : [],
+    sessionId: state.sessionId || "",
+    assignedClipIds: Array.isArray(state.assignedClipIds) ? state.assignedClipIds : [],
   };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
@@ -1100,8 +1085,17 @@ async function startSession() {
     state.name = user.name;
     state.email = user.email;
     state.currentIndex = 0;
-    state.training3ExcludeIds = await fetchTraining3ExcludeIds(user.email);
-    state.clipOrder = buildClipOrder(state.training3ExcludeIds);
+    let assignment;
+    try {
+      assignment = await fetchOrAssignTraining3Clips(user.email);
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || "Could not assign Training 3 clips.", "error");
+      return;
+    }
+    state.assignedClipIds = assignment.clipIds;
+    state.sessionId = assignment.sessionId;
+    state.clipOrder = assignment.clipIds.slice();
     state.startedAt = new Date().toISOString();
     state.sessionStartTime = Date.now();
     state.briefingCompleted = false;
@@ -1148,11 +1142,16 @@ async function resumeSession(session) {
   state.name = session.name;
   state.email = session.email;
   state.currentIndex = session.currentIndex;
-  state.training3ExcludeIds = await fetchTraining3ExcludeIds(session.email);
-  if (!state.training3ExcludeIds.length && Array.isArray(session.training3ExcludeIds)) {
-    state.training3ExcludeIds = session.training3ExcludeIds;
+  try {
+    const assignment = await fetchOrAssignTraining3Clips(session.email);
+    state.assignedClipIds = assignment.clipIds;
+    state.sessionId = assignment.sessionId || session.sessionId || "";
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || "Could not load Training 3 assignment.", "error");
+    return;
   }
-  state.clipOrder = ensureClipOrder(session.clipOrder, state.training3ExcludeIds);
+  state.clipOrder = ensureClipOrder(session.clipOrder, state.assignedClipIds);
   state.startedAt = session.startedAt || new Date().toISOString();
   state.sessionStartTime = session.sessionStartTime
     || (session.startedAt ? Date.parse(session.startedAt) : Date.now());
@@ -1559,6 +1558,7 @@ async function submitClip() {
   stopClipTimer();
 
   const payload = {
+    type: "training3",
     timestamp: timing.clipSubmittedAt,
     email: state.email,
     name: state.name,
@@ -1578,6 +1578,7 @@ async function submitClip() {
     clipStartedAt: timing.clipStartedAt,
     clipSubmittedAt: timing.clipSubmittedAt,
     skipped: false,
+    sessionId: state.sessionId || "",
     similarityPercent: similarityPercent(
       document.getElementById("writtenInput").value.trim(),
       clipTextsFor(clip.id).original || ""
