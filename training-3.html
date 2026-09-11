@@ -1569,7 +1569,6 @@ async function submitClip() {
     spoken: document.getElementById("spokenInput").value.trim(),
     written: document.getElementById("writtenInput").value.trim(),
     incorrectText: clipTextsFor(clip.id).incorrect || "",
-    originalText: clipTextsFor(clip.id).original || "",
     speakerCount: speakers.length,
     speakers: speakers,
     playCount: state.playCount,
@@ -1579,10 +1578,6 @@ async function submitClip() {
     clipSubmittedAt: timing.clipSubmittedAt,
     skipped: false,
     sessionId: state.sessionId || "",
-    similarityPercent: similarityPercent(
-      document.getElementById("writtenInput").value.trim(),
-      clipTextsFor(clip.id).original || ""
-    ),
   };
 
   const btn = document.getElementById("submitBtn");

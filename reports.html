@@ -879,7 +879,7 @@ function renderAssessmentTab() {
           const questionText = (meta && meta.question) || d.question || qId;
           const sectionTopic = (meta && meta.section) || d.section || "";
           let traineeAnswer = d.answer || "";
-          let correctAnswer = d.correctAnswer || "";
+          let correctAnswer = d.correctAnswer || "—";
 
           if (meta && meta.options) {
             if (d.selected && meta.options[d.selected]) {
@@ -887,9 +887,9 @@ function renderAssessmentTab() {
             } else if (!traineeAnswer && d.selected) {
               traineeAnswer = d.selected;
             }
-            if (meta.correctKey && meta.options[meta.correctKey]) {
-              correctAnswer = meta.options[meta.correctKey];
-            }
+          }
+          if (!d.correctAnswer) {
+            correctAnswer = "—";
           }
 
           return `
@@ -1099,7 +1099,7 @@ function renderGuidelinesTab() {
     const questionText = (meta && meta.question) || d.question || qId;
     const sectionTopic = (meta && meta.section) || d.section || "";
     let traineeAnswer = d.answer || "";
-    let correctAnswer = d.correctAnswer || "";
+    let correctAnswer = d.correctAnswer || "—";
 
     if (meta && meta.options) {
       if (d.selected && meta.options[d.selected]) {
@@ -1107,9 +1107,9 @@ function renderGuidelinesTab() {
       } else if (!traineeAnswer && d.selected) {
         traineeAnswer = d.selected;
       }
-      if (meta.correctKey && meta.options[meta.correctKey]) {
-        correctAnswer = meta.options[meta.correctKey];
-      }
+    }
+    if (!d.correctAnswer) {
+      correctAnswer = "—";
     }
 
     return `

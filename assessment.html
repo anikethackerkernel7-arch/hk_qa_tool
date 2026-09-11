@@ -341,6 +341,23 @@ const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syft
 window.SHEETS_ENDPOINT = SHEETS_ENDPOINT;
 const SESSION_KEY = "argos_assessment_session";
 
+async function apiPostJson(payload) {
+  if (!SHEETS_ENDPOINT || SHEETS_ENDPOINT.includes("PASTE_YOUR")) {
+    throw new Error("Sheets endpoint is not configured.");
+  }
+  const res = await fetch(SHEETS_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error("Request failed.");
+  const data = await res.json();
+  if (!data || data.ok !== true) {
+    throw new Error((data && data.message) || "Request failed.");
+  }
+  return data;
+}
+
 const SECTIONS_DEFAULT = ["briefing", "structure", "guidelinesMcq", "learn", "mcqA", "mcqB", "transcribe"];
 const SECTION_LABELS = {
   briefing: "What You Will Be Doing",
@@ -388,6 +405,7 @@ let state = {
   sessionStartTime: null,
   showTypingHints: false,
   forceContinuedSections: { mcqB: false, transcribe: false },
+  lastTypingEval: { mcqB: null, transcribe: null },
   guidelinesSubmitted: false
 };
 let activeAudio = null;
@@ -978,57 +996,55 @@ function remainingMissingCount(answer, gold) {
   return matchedC.filter((m) => !m).length;
 }
 
-function evaluateTypingSection(key) {
-  const items = [];
-  let allCorrect = true;
-  let similaritySum = 0;
-  let clipCount = 0;
-
+async function fetchTypingSectionScore(key) {
+  const answers = {};
   if (key === "mcqB") {
     for (const q of (ASSESSMENT_DATA.mcqB || [])) {
-      const answer = mcqBAnswerText(q);
-      const gold = q.correct || "";
-      const exact = normalizeText(answer) === normalizeText(gold);
-      if (!exact) allCorrect = false;
-      const similarity = similarityPercent(answer, gold);
-      similaritySum += similarity;
-      clipCount++;
-      const diff = renderTypedDiff(answer, gold);
-      items.push({
-        id: q.id,
-        remaining: remainingMissingCount(answer, gold),
-        answerHtml: diff.answerHtml,
-        exact,
-        similarity,
-        previewId: `hint_mcqb_${q.id}`
-      });
+      answers[q.id] = mcqBAnswerText(q);
     }
   } else if (key === "transcribe") {
     for (const q of (ASSESSMENT_DATA.transcribe || [])) {
-      const answer = state.answers.transcribe[q.id] || "";
-      const gold = q.gold || "";
-      const exact = normalizeText(answer) === normalizeText(gold);
-      if (!exact) allCorrect = false;
-      const similarity = similarityPercent(answer, gold);
-      similaritySum += similarity;
-      clipCount++;
-      const diff = renderTypedDiff(answer, gold);
-      items.push({
-        id: q.id,
-        remaining: remainingMissingCount(answer, gold),
-        answerHtml: diff.answerHtml,
-        exact,
-        similarity,
-        previewId: `hint_tr_${q.id}`
-      });
+      answers[q.id] = state.answers.transcribe[q.id] || "";
     }
+  } else {
+    return null;
   }
 
-  const averageSimilarity = clipCount ? Math.round(similaritySum / clipCount) : 0;
-  const threshold = FORCE_CONTINUE_THRESHOLDS[key] ?? 100;
-  const canForceContinue = averageSimilarity >= threshold;
+  const data = await apiPostJson({
+    action: "score_assessment_section",
+    section: key,
+    email: state.email,
+    answers
+  });
 
-  return { allCorrect, items, averageSimilarity, canForceContinue, threshold };
+  const items = (data.items || []).map((item) => ({
+    id: item.id || item.clipId,
+    remaining: item.remaining != null ? item.remaining : 0,
+    answerHtml: item.answerHtml || "",
+    exact: !!item.exact,
+    similarity: item.similarity != null ? item.similarity : 0,
+    previewId: key === "mcqB" ? `hint_mcqb_${item.id || item.clipId}` : `hint_tr_${item.id || item.clipId}`
+  }));
+
+  const evalResult = {
+    allCorrect: !!data.allCorrect,
+    items,
+    averageSimilarity: data.averageSimilarity != null ? data.averageSimilarity : 0,
+    canForceContinue: !!data.canForceContinue,
+    threshold: data.threshold != null ? data.threshold : (FORCE_CONTINUE_THRESHOLDS[key] ?? 100)
+  };
+  state.lastTypingEval[key] = evalResult;
+  return evalResult;
+}
+
+function getTypingEval(key) {
+  return state.lastTypingEval[key] || {
+    allCorrect: false,
+    items: [],
+    averageSimilarity: 0,
+    canForceContinue: false,
+    threshold: FORCE_CONTINUE_THRESHOLDS[key] ?? 100
+  };
 }
 
 function hideTypingHints() {
@@ -1041,7 +1057,7 @@ function hideTypingHints() {
 }
 
 function showTypingHints(key) {
-  const evalResult = evaluateTypingSection(key);
+  const evalResult = getTypingEval(key);
   const sidebar = document.getElementById("hintSidebar");
   const list = document.getElementById("hintSidebarList");
   const totalEl = document.getElementById("hintSidebarTotal");
@@ -1082,23 +1098,26 @@ function isLastSection() {
   return state.sectionIndex >= sections.length - 1;
 }
 
-function nextOrSubmitButton() {
-  return isLastSection()
-    ? '<button class="btn btn-primary" id="submitAssessmentBtn" onclick="submitAssessment()">Submit assessment</button>'
-    : '<button class="btn btn-primary" onclick="nextSection()">Next →</button>';
-}
-
 function forceContinueButtonHtml(key) {
   if (!state.showTypingHints) return "";
-  const evalResult = evaluateTypingSection(key);
+  const evalResult = getTypingEval(key);
   if (evalResult.allCorrect || !evalResult.canForceContinue) return "";
   const label = isLastSection() ? "Submit anyway" : "Continue anyway";
   return `<button type="button" class="btn btn-force" onclick="forceContinueSection('${key}')">${label}</button>`;
 }
 
-function forceContinueSection(key) {
+async function forceContinueSection(key) {
   if (key !== "mcqB" && key !== "transcribe") return;
-  const evalResult = evaluateTypingSection(key);
+  let evalResult = getTypingEval(key);
+  if (!evalResult.items.length) {
+    try {
+      evalResult = await fetchTypingSectionScore(key);
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || "Could not verify section score.", "error");
+      return;
+    }
+  }
   if (!evalResult.canForceContinue) {
     showToast("Section accuracy is not high enough to continue anyway.", "error");
     return;
@@ -1108,7 +1127,7 @@ function forceContinueSection(key) {
   hideTypingHints();
   saveSession();
   if (isLastSection()) {
-    submitAssessment();
+    await submitAssessment();
     return;
   }
   const sections = getSectionOrder();
@@ -1119,7 +1138,7 @@ function forceContinueSection(key) {
   }
 }
 
-function validateSection(key, opts) {
+async function validateSection(key, opts) {
   const fromAllSections = !!(opts && opts.fromAllSections);
   if (key === "briefing" || key === "structure" || key === "learn") return true;
   if (key === "guidelinesMcq" || key === "mcqA") {
@@ -1150,7 +1169,16 @@ function validateSection(key, opts) {
       }
     }
 
-    const evalResult = evaluateTypingSection(key);
+    let evalResult;
+    try {
+      showToast("Checking answers…", "");
+      evalResult = await fetchTypingSectionScore(key);
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || "Could not score this section. Try again.", "error");
+      return false;
+    }
+
     if (evalResult.allCorrect) return true;
     if (state.forceContinuedSections[key]) return true;
 
@@ -1188,10 +1216,10 @@ function validateSection(key, opts) {
   return true;
 }
 
-function validateAllSections() {
+async function validateAllSections() {
   const sections = getSectionOrder();
   for (const key of sections) {
-    if (!validateSection(key, { fromAllSections: true })) {
+    if (!(await validateSection(key, { fromAllSections: true }))) {
       return false;
     }
   }
@@ -1200,9 +1228,9 @@ function validateAllSections() {
   return true;
 }
 
-function validateCurrentSection() {
+async function validateCurrentSection() {
   const key = getSectionOrder()[state.sectionIndex];
-  const ok = validateSection(key);
+  const ok = await validateSection(key);
   if (ok && (key === "mcqB" || key === "transcribe")) {
     state.showTypingHints = false;
     hideTypingHints();
@@ -1210,8 +1238,14 @@ function validateCurrentSection() {
   return ok;
 }
 
+function nextOrSubmitButton() {
+  return isLastSection()
+    ? '<button class="btn btn-primary" id="submitAssessmentBtn" onclick="submitAssessment()">Submit assessment</button>'
+    : '<button class="btn btn-primary" onclick="nextSection()">Next →</button>';
+}
+
 async function nextSection() {
-  if (!validateCurrentSection()) return;
+  if (!(await validateCurrentSection())) return;
   const sections = getSectionOrder();
   const currentKey = sections[state.sectionIndex];
 
@@ -1239,19 +1273,22 @@ async function nextSection() {
 
 async function submitGuidelinesMcq() {
   try {
-    const w = ASSESSMENT_DATA.weights;
-    const guidelinesMcqDetail = scoreMcqSection("guidelinesMcq", w.guidelinesMcqPerItem || 1);
-    const guidelinesMcqScore = guidelinesMcqDetail.reduce((s, x) => s + x.points, 0);
-    const payload = {
-      type: "assessment_guidelines",
+    const answers = {};
+    const answerTexts = {};
+    getOrderedQuestions("guidelinesMcq").forEach((q) => {
+      const selected = state.answers.guidelinesMcq[q.id] || "";
+      answers[q.id] = selected;
+      answerTexts[q.id] = (q.options && q.options[selected]) || "";
+    });
+    await apiPostJson({
+      action: "score_guidelines_submit",
       name: state.name,
       email: state.email,
-      guidelinesMcqScore,
-      guidelinesMcq: guidelinesMcqDetail,
+      answers: { guidelinesMcq: answers },
+      answerTexts: { guidelinesMcq: answerTexts },
       submittedAt: new Date().toISOString(),
       sessionStartedAt: state.startedAt || ""
-    };
-    await sendToSheets(payload);
+    });
     state.guidelinesSubmitted = true;
     saveSession();
     showToast("Guidelines answers saved.", "success");
@@ -1286,86 +1323,36 @@ function guidelinesCorrectSummary(detail, scoreFallback) {
   return { correct: null, total: null, label: "" };
 }
 
-function scoreMcqSection(sectionKey, perItemWeight) {
-  const questions = sectionKey === "guidelinesMcq"
-    ? getOrderedQuestions(sectionKey)
-    : (ASSESSMENT_DATA[sectionKey] || []);
-  const weight = sectionKey === "guidelinesMcq" ? 1 : perItemWeight;
-  return questions.map((q, qi) => {
-    const selected = state.answers[sectionKey][q.id] || "";
-    const correct = selected === q.correctKey;
-    const selectedText = normalizeText(q.options[selected] || "");
-    const correctText = normalizeText(q.options[q.correctKey] || "");
-    const isCorrect = !!(correct || (selectedText && selectedText === correctText));
-    const points = isCorrect ? weight : 0;
-    const row = {
-      questionId: q.id,
-      selected,
-      correctKey: q.correctKey,
-      points,
-      isCorrect,
-      answer: q.options[selected] || "",
-      correctAnswer: q.options[q.correctKey] || ""
-    };
-    if (sectionKey === "guidelinesMcq") {
-      row.displayNumber = qi + 1;
-      row.question = q.question || "";
-      row.section = q.section || "";
-    }
-    return row;
-  });
-}
-
-function scoreAssessment() {
-  const w = ASSESSMENT_DATA.weights;
-  const guidelinesMcqDetail = scoreMcqSection("guidelinesMcq", w.guidelinesMcqPerItem || 1);
-  const mcqADetail = scoreMcqSection("mcqA", w.mcqAPerItem).map((d) => ({
-    clipId: d.questionId,
-    selected: d.selected,
-    correctKey: d.correctKey,
-    points: d.points,
-    isCorrect: d.isCorrect,
-    answer: d.answer,
-    correctAnswer: d.correctAnswer
-  }));
-  const mcqBDetail = ASSESSMENT_DATA.mcqB.map(q => {
-    const answer = mcqBAnswerText(q);
-    const similarity = similarityPercent(answer, q.correct || "");
-    const points = Math.round((similarity / 100) * (w.mcqBPerItem || 0));
-    return {
-      clipId: q.id,
-      answer,
-      correct: q.correct || "",
-      incorrect: q.incorrect || "",
-      similarity,
-      points
-    };
-  });
-  const trDetail = ASSESSMENT_DATA.transcribe.map(q => {
-    const answer = state.answers.transcribe[q.id] || "";
-    const similarity = similarityPercent(answer, q.gold);
-    return { clipId: q.id, answer, gold: q.gold, similarity };
+function buildAnswersPayload() {
+  const guidelinesMcq = {};
+  const guidelinesTexts = {};
+  getOrderedQuestions("guidelinesMcq").forEach((q) => {
+    const selected = state.answers.guidelinesMcq[q.id] || "";
+    guidelinesMcq[q.id] = selected;
+    guidelinesTexts[q.id] = (q.options && q.options[selected]) || "";
   });
 
-  const guidelinesMcqScore = guidelinesMcqDetail.reduce((s, x) => s + x.points, 0);
-  const mcqAScore = mcqADetail.reduce((s, x) => s + x.points, 0);
-  const mcqBScore = mcqBDetail.reduce((s, x) => s + x.points, 0);
-  const avgSim = trDetail.length
-    ? trDetail.reduce((s, x) => s + x.similarity, 0) / trDetail.length
-    : 0;
-  const transcribeScore = Math.round((avgSim / 100) * w.transcribeMax);
-  const overallScore = Math.max(0, Math.min(100, Math.round(mcqAScore + mcqBScore + transcribeScore)));
+  const mcqA = {};
+  const mcqATexts = {};
+  (ASSESSMENT_DATA.mcqA || []).forEach((q) => {
+    const selected = state.answers.mcqA[q.id] || "";
+    mcqA[q.id] = selected;
+    mcqATexts[q.id] = (q.options && q.options[selected]) || "";
+  });
+
+  const mcqB = {};
+  (ASSESSMENT_DATA.mcqB || []).forEach((q) => {
+    mcqB[q.id] = mcqBAnswerText(q);
+  });
+
+  const transcribe = {};
+  (ASSESSMENT_DATA.transcribe || []).forEach((q) => {
+    transcribe[q.id] = state.answers.transcribe[q.id] || "";
+  });
 
   return {
-    guidelinesMcqScore,
-    mcqAScore,
-    mcqBScore,
-    transcribeScore,
-    overallScore,
-    guidelinesMcqDetail,
-    mcqADetail,
-    mcqBDetail,
-    trDetail
+    answers: { guidelinesMcq, mcqA, mcqB, transcribe },
+    answerTexts: { guidelinesMcq: guidelinesTexts, mcqA: mcqATexts }
   };
 }
 
@@ -1558,41 +1545,34 @@ function renderFeedback(scores) {
 }
 
 async function submitAssessment() {
-  if (!validateAllSections()) return;
+  if (!(await validateAllSections())) return;
   const btn = document.getElementById("submitAssessmentBtn");
   if (btn) { btn.disabled = true; btn.textContent = "Scoring…"; }
 
-  const scores = scoreAssessment();
   const submittedAt = new Date().toISOString();
-  const payload = {
-    type: "assessment",
-    name: state.name,
-    email: state.email,
-    overallScore: scores.overallScore,
-    guidelinesMcqScore: scores.guidelinesMcqScore,
-    mcqAScore: scores.mcqAScore,
-    mcqBScore: scores.mcqBScore,
-    transcribeScore: scores.transcribeScore,
-    guidelinesMcq: scores.guidelinesMcqDetail,
-    mcqA: scores.mcqADetail,
-    mcqB: scores.mcqBDetail,
-    transcribe: scores.trDetail,
-    submittedAt,
-    sessionElapsedSec: Math.round((Date.now() - state.sessionStartTime) / 1000)
-  };
+  const built = buildAnswersPayload();
 
   try {
-    await sendToSheets(payload);
+    const data = await apiPostJson({
+      action: "score_assessment_submit",
+      name: state.name,
+      email: state.email,
+      answers: built.answers,
+      answerTexts: built.answerTexts,
+      submittedAt,
+      sessionElapsedSec: Math.round((Date.now() - state.sessionStartTime) / 1000)
+    });
+    const scores = data.scores || {};
+    renderFeedback(scores);
+    document.getElementById("mainApp").classList.add("hidden");
+    document.getElementById("resultsScreen").classList.remove("hidden");
+    clearSession();
+    showToast("Assessment submitted.", "success");
   } catch (err) {
     console.error(err);
-    showToast("Assessment complete, but sheet sync may have failed.", "error");
+    showToast(err.message || "Could not submit assessment. Please try again.", "error");
+    if (btn) { btn.disabled = false; btn.textContent = "Submit assessment"; }
   }
-
-  renderFeedback(scores);
-  document.getElementById("mainApp").classList.add("hidden");
-  document.getElementById("resultsScreen").classList.remove("hidden");
-  clearSession();
-  showToast("Assessment submitted.", "success");
 }
 
 async function sendToSheets(payload) {
@@ -1641,6 +1621,7 @@ async function startSession() {
       sessionStartTime: Date.now(),
       showTypingHints: false,
       forceContinuedSections: { mcqB: false, transcribe: false },
+      lastTypingEval: { mcqB: null, transcribe: null },
       guidelinesSubmitted: false
     };
     document.getElementById("headerName").textContent = user.name;
@@ -1725,6 +1706,7 @@ function endSession(skipConfirm) {
     startedAt: null, sessionStartTime: null,
     showTypingHints: false,
     forceContinuedSections: { mcqB: false, transcribe: false },
+    lastTypingEval: { mcqB: null, transcribe: null },
     guidelinesSubmitted: false
   };
   hideTypingHints();

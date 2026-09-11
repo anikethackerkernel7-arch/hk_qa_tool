@@ -1,18 +1,14 @@
 /**
- * Argos Training — Google Sheets receiver (v21)
+ * Argos Training — Google Sheets receiver (v22)
  *
  * POST routes (data.type / data.action):
- *  - Practice clips (default) — per-user sheet + summary totals
- *  - training3 — shared Training3 sheet (early practice)
- *  - assessment — full assessment row on shared "Assessment" sheet
- *  - assessment_guidelines — early guidelines MCQ row on "GuidelinesMcq" sheet
- *  - action: admin_* / training3_* / batch_* / check_user
+ *  - Practice clips (default) — per-user sheet + summary totals; server scores vs ANSWER_KEY
+ *  - training3 — shared Training3 sheet; server scores vs ANSWER_KEY
+ *  - assessment — full assessment row; server scores vs ANSWER_KEY
+ *  - assessment_guidelines — GuidelinesMcq sheet; server scores vs ANSWER_KEY
+ *  - action: score_assessment_section / score_assessment_submit / admin_* / training3_* / batch_*
  *
- * Practice sheet behaviour:
- *  - Idempotent clip submissions (email + clipId + clipStartedAt)
- *  - Skipped submissions ignored; correction columns (Incorrect / Original Text)
- *  - SimilarityPercent per clip (Written vs Original) + AVG SIMILARITY % in totals
- *  - Totals block with mm:ss time column as plain text
+ * Requires companion file answer-key.gs defining global ANSWER_KEY (never ship to HTML).
  */
 
 const HEADERS = [
@@ -87,6 +83,9 @@ function doPost(e) {
         .createTextOutput(JSON.stringify({ ok: true, ignored: "skipped" }))
         .setMimeType(ContentService.MimeType.JSON);
     }
+
+    // Practice — enrich with server-side original + similarity before write
+    enrichPracticeClipPayload_(data);
 
     const sheet = getOrCreateUserSheet(data.email);
 
@@ -949,6 +948,15 @@ function handleUserAdminPost(data) {
   if (action === "admin_batch_members") {
     return jsonResponse(handleAdminListBatchMembers(data.token, data.batchId));
   }
+  if (action === "score_assessment_section") {
+    return jsonResponse(handleScoreAssessmentSection(data));
+  }
+  if (action === "score_assessment_submit") {
+    return jsonResponse(handleScoreAssessmentSubmit(data));
+  }
+  if (action === "score_guidelines_submit") {
+    return jsonResponse(handleScoreGuidelinesSubmit(data));
+  }
 
   return jsonResponse({ ok: false, message: "Unknown action." });
 }
@@ -1095,6 +1103,7 @@ function handleTraining3Post(data) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
+    enrichPracticeClipPayload_(data);
     sheet.appendRow(buildTraining3Row(data));
 
     return ContentService
@@ -1676,3 +1685,426 @@ function handleAdminMoveBatchMember(data) {
   }
 }
 
+/* =========================================================
+   ANSWER KEY SCORING (LCS) — requires answer-key.gs (ANSWER_KEY)
+   ========================================================= */
+
+function getAnswerKey_() {
+  if (typeof ANSWER_KEY === "undefined" || !ANSWER_KEY) {
+    throw new Error("ANSWER_KEY is not loaded. Add answer-key.gs to the Apps Script project.");
+  }
+  return ANSWER_KEY;
+}
+
+function tokenizeWords_(text) {
+  return String(text || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function lcsTable_(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, function () { return new Array(n + 1).fill(0); });
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+      else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp;
+}
+
+function wordDiffMatches_(answerTokens, correctTokens) {
+  const aNorm = answerTokens.map(function (t) { return String(t).toLowerCase(); });
+  const cNorm = correctTokens.map(function (t) { return String(t).toLowerCase(); });
+  const dp = lcsTable_(aNorm, cNorm);
+  const matchedA = new Array(answerTokens.length).fill(false);
+  const matchedC = new Array(correctTokens.length).fill(false);
+  let i = answerTokens.length;
+  let j = correctTokens.length;
+  while (i > 0 && j > 0) {
+    if (aNorm[i - 1] === cNorm[j - 1]) {
+      matchedA[i - 1] = true;
+      matchedC[j - 1] = true;
+      i--;
+      j--;
+    } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+  return { matchedA: matchedA, matchedC: matchedC };
+}
+
+/** Word-level: matched / (matched + missing + extra) * 100 */
+function similarityPercent_(answer, gold) {
+  const aToks = tokenizeWords_(answer);
+  const gToks = tokenizeWords_(gold);
+  if (!aToks.length || !gToks.length) return 0;
+  const flags = wordDiffMatches_(aToks, gToks);
+  const matched = flags.matchedC.filter(Boolean).length;
+  const missing = flags.matchedC.length - matched;
+  const extra = flags.matchedA.length - flags.matchedA.filter(Boolean).length;
+  const denom = matched + missing + extra;
+  if (!denom) return 0;
+  return Math.round((matched / denom) * 100);
+}
+
+function remainingMissingCount_(answer, gold) {
+  const aToks = tokenizeWords_(answer);
+  const cToks = tokenizeWords_(gold);
+  if (!cToks.length) return 0;
+  const flags = wordDiffMatches_(aToks, cToks);
+  return flags.matchedC.filter(function (m) { return !m; }).length;
+}
+
+function escapeHtml_(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function normalizeText_(s) {
+  return String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/** Answer-side highlights only (no gold plaintext leaked). */
+function renderAnswerDiffHtml_(answer, gold) {
+  const aToks = tokenizeWords_(answer);
+  const cToks = tokenizeWords_(gold);
+  if (!aToks.length) {
+    return '<span class="diff-bad">(no answer)</span>';
+  }
+  if (!cToks.length) {
+    return aToks.map(function (tok) {
+      return '<span class="diff-bad">' + escapeHtml_(tok) + "</span>";
+    }).join(" ");
+  }
+  const flags = wordDiffMatches_(aToks, cToks);
+  return aToks.map(function (tok, idx) {
+    const cls = flags.matchedA[idx] ? "diff-ok" : "diff-bad";
+    return '<span class="' + cls + '">' + escapeHtml_(tok) + "</span>";
+  }).join(" ");
+}
+
+function renderCorrectDiffHtml_(answer, gold) {
+  const aToks = tokenizeWords_(answer);
+  const cToks = tokenizeWords_(gold);
+  if (!cToks.length) {
+    return '<span class="diff-miss">(no gold text)</span>';
+  }
+  if (!aToks.length) {
+    return cToks.map(function (tok) {
+      return '<span class="diff-miss">' + escapeHtml_(tok) + "</span>";
+    }).join(" ");
+  }
+  const flags = wordDiffMatches_(aToks, cToks);
+  return cToks.map(function (tok, idx) {
+    const cls = flags.matchedC[idx] ? "diff-ok" : "diff-miss";
+    return '<span class="' + cls + '">' + escapeHtml_(tok) + "</span>";
+  }).join(" ");
+}
+
+function getClipOriginal_(clipId) {
+  const key = getAnswerKey_();
+  const id = String(clipId || "");
+  if (!key.clipOriginals || key.clipOriginals[id] == null) return "";
+  return String(key.clipOriginals[id] || "");
+}
+
+function enrichPracticeClipPayload_(data) {
+  try {
+    const clipId = String(data.clipId || "");
+    const original = getClipOriginal_(clipId);
+    data.originalText = original;
+    data.similarityPercent = similarityPercent_(data.written || "", original);
+  } catch (err) {
+    Logger.log("enrichPracticeClipPayload_ failed: " + err);
+    data.originalText = "";
+    data.similarityPercent = 0;
+  }
+}
+
+function scoreMcqAnswers_(sectionKey, answersMap, includeSecrets) {
+  const key = getAnswerKey_();
+  const bank = key[sectionKey] || {};
+  const weights = key.weights || {};
+  let perItem = 1;
+  if (sectionKey === "mcqA") perItem = Number(weights.mcqAPerItem) || 5;
+  else if (sectionKey === "guidelinesMcq") perItem = 1;
+
+  const items = [];
+  let scoreSum = 0;
+  const idList = answersMap && Object.keys(answersMap).length
+    ? Object.keys(answersMap)
+    : Object.keys(bank);
+  idList.forEach(function (qid) {
+    const meta = bank[qid] || {};
+    const selected = String((answersMap && answersMap[qid]) || "");
+    const correctKey = String(meta.correctKey || "");
+    const isCorrect = !!(selected && selected === correctKey);
+    const points = isCorrect ? perItem : 0;
+    scoreSum += points;
+    const row = {
+      questionId: qid,
+      selected: selected,
+      points: points,
+      isCorrect: isCorrect
+    };
+    if (includeSecrets) {
+      row.correctKey = correctKey;
+      row.correctAnswer = String(meta.correctAnswer || "");
+      row.question = String(meta.question || "");
+      row.section = String(meta.section || "");
+    }
+    items.push(row);
+  });
+  return { items: items, score: scoreSum };
+}
+
+function scoreTypingSection_(sectionKey, answersMap, includeSecrets) {
+  const key = getAnswerKey_();
+  const bank = key[sectionKey] || {};
+  const weights = key.weights || {};
+  const items = [];
+  let similaritySum = 0;
+  let count = 0;
+  let allExact = true;
+
+  Object.keys(bank).forEach(function (qid) {
+    const meta = bank[qid] || {};
+    const gold = sectionKey === "mcqB"
+      ? String(meta.correct || "")
+      : String(meta.gold || "");
+    const answer = String((answersMap && answersMap[qid]) || "");
+    const similarity = similarityPercent_(answer, gold);
+    const exact = normalizeText_(answer) === normalizeText_(gold) && !!answer;
+    if (!exact) allExact = false;
+    similaritySum += similarity;
+    count++;
+    const row = {
+      id: qid,
+      clipId: qid,
+      answer: answer,
+      similarity: similarity,
+      exact: exact,
+      remaining: remainingMissingCount_(answer, gold),
+      answerHtml: renderAnswerDiffHtml_(answer, gold)
+    };
+    if (includeSecrets) {
+      if (sectionKey === "mcqB") {
+        row.correct = gold;
+        row.incorrect = "";
+        const pts = Math.round((similarity / 100) * (Number(weights.mcqBPerItem) || 10));
+        row.points = pts;
+      } else {
+        row.gold = gold;
+      }
+      row.correctHtml = renderCorrectDiffHtml_(answer, gold);
+    }
+    items.push(row);
+  });
+
+  const averageSimilarity = count ? Math.round(similaritySum / count) : 0;
+  return {
+    items: items,
+    averageSimilarity: averageSimilarity,
+    allExact: allExact,
+    count: count
+  };
+}
+
+function handleScoreAssessmentSection(data) {
+  try {
+    const section = String(data.section || "").trim();
+    const answers = data.answers && typeof data.answers === "object" ? data.answers : {};
+    const thresholds = { mcqB: 80, transcribe: 70 };
+
+    if (section === "mcqA" || section === "guidelinesMcq") {
+      const scored = scoreMcqAnswers_(section, answers, false);
+      const total = scored.items.length;
+      const correct = scored.items.filter(function (x) { return x.isCorrect; }).length;
+      return {
+        ok: true,
+        section: section,
+        items: scored.items,
+        score: scored.score,
+        correctCount: correct,
+        total: total,
+        allCorrect: total > 0 && correct === total
+      };
+    }
+
+    if (section === "mcqB" || section === "transcribe") {
+      const scored = scoreTypingSection_(section, answers, false);
+      const threshold = thresholds[section] != null ? thresholds[section] : 100;
+      return {
+        ok: true,
+        section: section,
+        items: scored.items,
+        averageSimilarity: scored.averageSimilarity,
+        allCorrect: scored.allExact,
+        threshold: threshold,
+        canForceContinue: scored.averageSimilarity >= threshold
+      };
+    }
+
+    return { ok: false, message: "Unknown section." };
+  } catch (err) {
+    Logger.log("handleScoreAssessmentSection failed: " + err);
+    return { ok: false, message: "Unable to score section." };
+  }
+}
+
+function buildFullAssessmentScores_(payload) {
+  const answers = payload.answers && typeof payload.answers === "object" ? payload.answers : {};
+  const key = getAnswerKey_();
+  const weights = key.weights || {};
+
+  const gMap = answers.guidelinesMcq || {};
+  const aMap = answers.mcqA || {};
+  const bMap = answers.mcqB || {};
+  const tMap = answers.transcribe || {};
+
+  const gScored = scoreMcqAnswers_("guidelinesMcq", gMap, true);
+  gScored.items.forEach(function (row, qi) {
+    row.displayNumber = qi + 1;
+    const optText = ""; // client may attach later; store key fields
+    row.answer = row.answer || "";
+  });
+  // Attach selected option text if client sent answerTexts
+  const gTexts = (payload.answerTexts && payload.answerTexts.guidelinesMcq) || {};
+  gScored.items.forEach(function (row) {
+    if (gTexts[row.questionId]) row.answer = String(gTexts[row.questionId]);
+  });
+
+  const aScored = scoreMcqAnswers_("mcqA", aMap, true);
+  const aTexts = (payload.answerTexts && payload.answerTexts.mcqA) || {};
+  const mcqADetail = aScored.items.map(function (d) {
+    return {
+      clipId: d.questionId,
+      selected: d.selected,
+      correctKey: d.correctKey,
+      points: d.points,
+      isCorrect: d.isCorrect,
+      answer: aTexts[d.questionId] || "",
+      correctAnswer: d.correctAnswer || ""
+    };
+  });
+
+  const bScored = scoreTypingSection_("mcqB", bMap, true);
+  const mcqBDetail = bScored.items.map(function (d) {
+    return {
+      clipId: d.clipId,
+      answer: d.answer,
+      correct: d.correct || "",
+      incorrect: d.incorrect || "",
+      similarity: d.similarity,
+      points: d.points != null ? d.points : Math.round((d.similarity / 100) * (Number(weights.mcqBPerItem) || 10))
+    };
+  });
+
+  const tScored = scoreTypingSection_("transcribe", tMap, true);
+  const trDetail = tScored.items.map(function (d) {
+    return {
+      clipId: d.clipId,
+      answer: d.answer,
+      gold: d.gold || "",
+      similarity: d.similarity
+    };
+  });
+
+  const guidelinesMcqDetail = gScored.items;
+  const guidelinesMcqScore = gScored.score;
+  const mcqAScore = aScored.score;
+  const mcqBScore = mcqBDetail.reduce(function (s, x) { return s + (x.points || 0); }, 0);
+  const avgSim = trDetail.length
+    ? trDetail.reduce(function (s, x) { return s + x.similarity; }, 0) / trDetail.length
+    : 0;
+  const transcribeScore = Math.round((avgSim / 100) * (Number(weights.transcribeMax) || 40));
+  const overallScore = Math.max(0, Math.min(100, Math.round(mcqAScore + mcqBScore + transcribeScore)));
+
+  return {
+    guidelinesMcqScore: guidelinesMcqScore,
+    mcqAScore: mcqAScore,
+    mcqBScore: mcqBScore,
+    transcribeScore: transcribeScore,
+    overallScore: overallScore,
+    guidelinesMcqDetail: guidelinesMcqDetail,
+    mcqADetail: mcqADetail,
+    mcqBDetail: mcqBDetail,
+    trDetail: trDetail
+  };
+}
+
+function handleScoreGuidelinesSubmit(data) {
+  try {
+    const answers = (data.answers && data.answers.guidelinesMcq) || data.answers || {};
+    const texts = (data.answerTexts && data.answerTexts.guidelinesMcq) || {};
+    const scored = scoreMcqAnswers_("guidelinesMcq", answers, true);
+    scored.items.forEach(function (row, qi) {
+      row.displayNumber = qi + 1;
+      if (texts[row.questionId]) row.answer = String(texts[row.questionId]);
+    });
+
+    const rowData = {
+      timestamp: new Date().toISOString(),
+      name: data.name || "",
+      email: data.email || "",
+      guidelinesMcqScore: scored.score,
+      guidelinesMcq: scored.items,
+      submittedAt: data.submittedAt || new Date().toISOString(),
+      sessionStartedAt: data.sessionStartedAt || ""
+    };
+
+    const sheet = getOrCreateGuidelinesMcqSheet();
+    ensureGuidelinesMcqHeaders(sheet);
+    if (!isDuplicateGuidelinesMcq(sheet, rowData)) {
+      sheet.appendRow(buildGuidelinesMcqRow(rowData));
+    }
+
+    return {
+      ok: true,
+      guidelinesMcqScore: scored.score,
+      guidelinesMcqDetail: scored.items
+    };
+  } catch (err) {
+    Logger.log("handleScoreGuidelinesSubmit failed: " + err);
+    return { ok: false, message: "Unable to save guidelines." };
+  }
+}
+
+function handleScoreAssessmentSubmit(data) {
+  try {
+    const scores = buildFullAssessmentScores_(data);
+    const rowData = {
+      timestamp: new Date().toISOString(),
+      name: data.name || "",
+      email: data.email || "",
+      overallScore: scores.overallScore,
+      mcqAScore: scores.mcqAScore,
+      mcqBScore: scores.mcqBScore,
+      transcribeScore: scores.transcribeScore,
+      mcqA: scores.mcqADetail,
+      mcqB: scores.mcqBDetail,
+      transcribe: scores.trDetail,
+      sessionElapsedSec: data.sessionElapsedSec != null ? data.sessionElapsedSec : "",
+      submittedAt: data.submittedAt || new Date().toISOString(),
+      guidelinesMcqScore: scores.guidelinesMcqScore,
+      guidelinesMcq: scores.guidelinesMcqDetail
+    };
+
+    const sheet = getOrCreateAssessmentSheet();
+    ensureAssessmentHeaders(sheet);
+    if (!isDuplicateAssessment(sheet, rowData)) {
+      sheet.appendRow(buildAssessmentRow(rowData));
+    }
+
+    return { ok: true, scores: scores };
+  } catch (err) {
+    Logger.log("handleScoreAssessmentSubmit failed: " + err);
+    return { ok: false, message: "Unable to submit assessment." };
+  }
+}
