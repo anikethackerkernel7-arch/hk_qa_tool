@@ -5,6 +5,8 @@ const AUTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const AUTH_CACHE_PREFIX = "argos_auth_";
 
 let _lastAuthMessage = "";
+/** True only when server explicitly returned allowed:false (not network/API blips). */
+let _lastAuthDenied = false;
 
 function getAuthEndpoint() {
   if (typeof window !== "undefined" && window.SHEETS_ENDPOINT) {
@@ -15,6 +17,10 @@ function getAuthEndpoint() {
 
 function getLastAuthMessage() {
   return _lastAuthMessage || "Unable to verify access. Please try again.";
+}
+
+function wasAuthDenied() {
+  return !!_lastAuthDenied;
 }
 
 function readAuthCache(email) {
@@ -58,6 +64,7 @@ function clearAuthCache(email) {
 
 async function lookupAllowedUser(email) {
   _lastAuthMessage = "";
+  _lastAuthDenied = false;
   const key = (email || "").trim().toLowerCase();
   if (!key || !key.includes("@")) {
     _lastAuthMessage = "Please enter a valid email address.";
@@ -90,6 +97,7 @@ async function lookupAllowedUser(email) {
     }
 
     if (!data.allowed) {
+      _lastAuthDenied = true;
       if (data.disabled) {
         _lastAuthMessage = "Your login access is currently disabled. Contact your trainer.";
       } else {

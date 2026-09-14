@@ -1,5 +1,5 @@
 /**
- * Argos Training — Google Sheets receiver (v24)
+ * Argos Training — Google Sheets receiver (v26)
  *
  * POST routes (data.type / data.action):
  *  - Practice clips (default) — per-user sheet + summary totals; server scores vs ANSWER_KEY
@@ -2174,6 +2174,34 @@ function findAssessmentProgressRow_(sheet, email) {
   return -1;
 }
 
+/** Delete duplicate progress rows for an email; keep keepRow (1-based). */
+function dedupeAssessmentProgressRows_(sheet, email, keepRow) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  const values = sheet.getRange(2, 1, lastRow, 1).getValues();
+  // Delete from bottom so indexes stay valid
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = i + 2;
+    if (row === keepRow) continue;
+    if (normalizeEmail(values[i][0]) === email) {
+      sheet.deleteRow(row);
+    }
+  }
+}
+
+function writeAssessmentProgressRow_(sheet, row, email, name, json, updatedAt) {
+  // Write columns individually so ProgressJson is stored as plain text (not formula).
+  if (row === -1) {
+    sheet.appendRow([email, name, "", updatedAt]);
+    row = sheet.getLastRow();
+  }
+  sheet.getRange(row, 1).setValue(email);
+  sheet.getRange(row, 2).setValue(name);
+  sheet.getRange(row, 3).setValue(String(json || ""));
+  sheet.getRange(row, 4).setValue(updatedAt);
+  return row;
+}
+
 function requireAllowedAssessmentUser_(email) {
   const key = normalizeEmail(email);
   if (!key || !isValidEmail(key)) {
@@ -2222,10 +2250,17 @@ function clearAssessmentProgressForEmail_(email) {
   const key = normalizeEmail(email);
   if (!key) return false;
   const sheet = getOrCreateAssessmentProgressSheet();
-  const row = findAssessmentProgressRow_(sheet, key);
-  if (row === -1) return false;
-  sheet.deleteRow(row);
-  return true;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return false;
+  const values = sheet.getRange(2, 1, lastRow, 1).getValues();
+  let deleted = false;
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (normalizeEmail(values[i][0]) === key) {
+      sheet.deleteRow(i + 2);
+      deleted = true;
+    }
+  }
+  return deleted;
 }
 
 function handleSaveAssessmentProgress(data) {
@@ -2239,10 +2274,17 @@ function handleSaveAssessmentProgress(data) {
       : {};
 
     const sheet = getOrCreateAssessmentProgressSheet();
-    const row = findAssessmentProgressRow_(sheet, gate.email);
+    let row = findAssessmentProgressRow_(sheet, gate.email);
     let existing = {};
     if (row !== -1) {
-      existing = safeJsonParse_(sheet.getRange(row, 3).getValue(), {});
+      const rawExisting = sheet.getRange(row, 3).getValue();
+      existing = safeJsonParse_(
+        typeof rawExisting === "string" ? rawExisting : String(rawExisting == null ? "" : rawExisting),
+        {}
+      );
+      if (!existing || typeof existing !== "object" || Array.isArray(existing)) {
+        existing = {};
+      }
     }
 
     const merged = mergeAssessmentProgress_(existing, incoming, sectionKey);
@@ -2250,13 +2292,15 @@ function handleSaveAssessmentProgress(data) {
     const updatedAt = new Date().toISOString();
     const json = JSON.stringify(merged);
 
-    if (row === -1) {
-      sheet.appendRow([gate.email, name, json, updatedAt]);
-    } else {
-      sheet.getRange(row, 1, row, 4).setValues([[gate.email, name, json, updatedAt]]);
-    }
+    row = writeAssessmentProgressRow_(sheet, row, gate.email, name, json, updatedAt);
+    dedupeAssessmentProgressRows_(sheet, gate.email, row);
 
-    return { ok: true, updatedAt: updatedAt };
+    const sectionIndex = Number(merged.sectionIndex);
+    return {
+      ok: true,
+      updatedAt: updatedAt,
+      sectionIndex: Number.isFinite(sectionIndex) ? sectionIndex : null
+    };
   } catch (err) {
     Logger.log("handleSaveAssessmentProgress failed: " + err);
     return { ok: false, message: "Unable to save assessment progress." };
@@ -2274,8 +2318,12 @@ function handleGetAssessmentProgress(email) {
       return { ok: true, found: false };
     }
 
-    const progress = safeJsonParse_(sheet.getRange(row, 3).getValue(), null);
-    if (!progress || typeof progress !== "object") {
+    const rawProgress = sheet.getRange(row, 3).getValue();
+    const progress = safeJsonParse_(
+      typeof rawProgress === "string" ? rawProgress : String(rawProgress == null ? "" : rawProgress),
+      null
+    );
+    if (!progress || typeof progress !== "object" || Array.isArray(progress)) {
       return { ok: true, found: false };
     }
 

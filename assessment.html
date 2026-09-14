@@ -343,41 +343,84 @@ const SESSION_KEY = "argos_assessment_session";
 const SESSION_VERSION = 1;
 let _navBusy = false;
 
-async function apiPostJson(payload) {
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeEmailKey(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  if (!text) throw new Error("Empty response from server.");
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    throw new Error("Invalid response from server.");
+  }
+}
+
+async function apiPostJson(payload, opts) {
   if (!SHEETS_ENDPOINT || SHEETS_ENDPOINT.includes("PASTE_YOUR")) {
     throw new Error("Sheets endpoint is not configured.");
   }
-  const res = await fetch(SHEETS_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(payload)
-  });
-  if (!res.ok) throw new Error("Request failed.");
-  const data = await res.json();
-  if (!data || data.ok !== true) {
-    throw new Error((data && data.message) || "Request failed.");
+  const attempts = (opts && opts.retries != null) ? opts.retries : 1;
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(SHEETS_ENDPOINT, {
+        method: "POST",
+        redirect: "follow",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error("Request failed.");
+      const data = await parseJsonResponse(res);
+      if (!data || data.ok !== true) {
+        throw new Error((data && data.message) || "Request failed.");
+      }
+      return data;
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) await sleepMs(500 * (i + 1));
+    }
   }
-  return data;
+  throw lastErr || new Error("Request failed.");
 }
 
-async function apiGetJson(params) {
+async function apiGetJson(params, opts) {
   if (!SHEETS_ENDPOINT || SHEETS_ENDPOINT.includes("PASTE_YOUR")) {
     throw new Error("Sheets endpoint is not configured.");
   }
-  const qs = new URLSearchParams(params || {}).toString();
-  const res = await fetch(SHEETS_ENDPOINT + "?" + qs, { method: "GET" });
-  if (!res.ok) throw new Error("Request failed.");
-  const data = await res.json();
-  if (!data || data.ok !== true) {
-    throw new Error((data && data.message) || "Request failed.");
+  const attempts = (opts && opts.retries != null) ? opts.retries : 1;
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const qs = new URLSearchParams(params || {}).toString();
+      const res = await fetch(SHEETS_ENDPOINT + "?" + qs, {
+        method: "GET",
+        redirect: "follow"
+      });
+      if (!res.ok) throw new Error("Request failed.");
+      const data = await parseJsonResponse(res);
+      if (!data || data.ok !== true) {
+        throw new Error((data && data.message) || "Request failed.");
+      }
+      return data;
+    } catch (err) {
+      lastErr = err;
+      if (i < attempts - 1) await sleepMs(500 * (i + 1));
+    }
   }
-  return data;
+  throw lastErr || new Error("Request failed.");
 }
 
-function buildProgressPayload() {
+function buildProgressPayload(overrides) {
+  const o = overrides && typeof overrides === "object" ? overrides : {};
   return {
     sessionVersion: SESSION_VERSION,
-    sectionIndex: state.sectionIndex,
+    sectionIndex: o.sectionIndex != null ? o.sectionIndex : state.sectionIndex,
     sectionOrder: state.sectionOrder,
     itemOrders: state.itemOrders,
     optionOrders: state.optionOrders,
@@ -385,28 +428,75 @@ function buildProgressPayload() {
     startedAt: state.startedAt,
     sessionStartTime: state.sessionStartTime,
     forceContinuedSections: state.forceContinuedSections,
-    guidelinesSubmitted: state.guidelinesSubmitted
+    guidelinesSubmitted: o.guidelinesSubmitted != null
+      ? !!o.guidelinesSubmitted
+      : state.guidelinesSubmitted
   };
 }
 
-async function saveProgressToServer(sectionKey) {
-  if (!state.email) return;
+function countFilledAnswers(session) {
+  if (!session || !session.answers || typeof session.answers !== "object") return 0;
+  let n = 0;
+  ["guidelinesMcq", "mcqA", "mcqB", "transcribe"].forEach((key) => {
+    const bag = session.answers[key];
+    if (!bag || typeof bag !== "object") return;
+    Object.keys(bag).forEach((id) => {
+      const v = bag[id];
+      if (v != null && String(v).trim() !== "") n++;
+    });
+  });
+  return n;
+}
+
+function pickNewerProgress(server, local) {
+  if (server && !local) return { source: "server", session: server };
+  if (local && !server) return { source: "local", session: local };
+  if (!server && !local) return { source: "none", session: null };
+
+  const sIdx = Number(server.sectionIndex);
+  const lIdx = Number(local.sectionIndex);
+  const sSafe = Number.isFinite(sIdx) ? sIdx : -1;
+  const lSafe = Number.isFinite(lIdx) ? lIdx : -1;
+
+  if (lSafe > sSafe) return { source: "local", session: local };
+  if (sSafe > lSafe) return { source: "server", session: server };
+
+  const sAns = countFilledAnswers(server);
+  const lAns = countFilledAnswers(local);
+  if (lAns > sAns) return { source: "local", session: local };
+  return { source: "server", session: server };
+}
+
+async function saveProgressToServer(sectionKey, progressOverrides) {
+  if (!state.email) return false;
+  const progress = buildProgressPayload(progressOverrides);
+  const expectedIndex = Number(progress.sectionIndex);
   try {
     await apiPostJson({
       action: "save_assessment_progress",
       email: state.email,
       name: state.name,
       section: sectionKey || "",
-      progress: buildProgressPayload()
+      progress: progress
     });
+    return true;
   } catch (err) {
     console.error(err);
+    const verified = await fetchAssessmentProgress(state.email);
+    if (
+      verified &&
+      normalizeEmailKey(verified.email) === normalizeEmailKey(state.email) &&
+      Number(verified.sectionIndex) === expectedIndex
+    ) {
+      return true;
+    }
     showToast("Progress saved locally; server sync failed.", "error");
+    return false;
   }
 }
 
 async function fetchAssessmentProgress(email) {
-  const key = String(email || "").trim().toLowerCase();
+  const key = normalizeEmailKey(email);
   if (!key) return null;
   try {
     const data = await apiGetJson({
@@ -424,6 +514,38 @@ async function fetchAssessmentProgress(email) {
   } catch (err) {
     console.error(err);
     return null;
+  }
+}
+
+/**
+ * Prefer newer of server vs local (higher sectionIndex, then more answers).
+ * Never replace a higher local index with a lower server index.
+ */
+async function resolveProgressForEmail(email, localFallback) {
+  const key = normalizeEmailKey(email);
+  if (!key) return { source: "none", session: null };
+
+  const server = await fetchAssessmentProgress(key);
+  const local = localFallback && normalizeEmailKey(localFallback.email) === key
+    ? localFallback
+    : readLocalSessionRaw();
+  const localOk = local && normalizeEmailKey(local.email) === key
+    ? local
+    : null;
+
+  return pickNewerProgress(server, localOk);
+}
+
+async function clearProgressOnServer(email) {
+  const key = normalizeEmailKey(email);
+  if (!key) return;
+  try {
+    await apiPostJson({
+      action: "clear_assessment_progress",
+      email: key
+    });
+  } catch (err) {
+    console.error(err);
   }
 }
 
@@ -682,18 +804,28 @@ function saveSession() {
   }));
 }
 
-async function loadSession() {
+function readLocalSessionRaw() {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw);
-    if (!s.email) {
-      localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
+    if (!s || !s.email) return null;
+    return s;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function loadSession() {
+  try {
+    const s = readLocalSessionRaw();
+    if (!s) return null;
     const user = await lookupAllowedUser(s.email);
     if (!user) {
-      localStorage.removeItem(SESSION_KEY);
+      // Only wipe when the server explicitly denies access — not on network blips.
+      if (typeof wasAuthDenied === "function" && wasAuthDenied()) {
+        localStorage.removeItem(SESSION_KEY);
+      }
       return null;
     }
     return s;
@@ -1237,13 +1369,16 @@ async function forceContinueSection(key) {
       return;
     }
     const sections = getSectionOrder();
-    if (state.sectionIndex < sections.length - 1) {
-      state.sectionIndex++;
-      saveSession();
-      setNavLoading(true, "Saving…");
-      await saveProgressToServer(key);
-      renderSection(true);
-    }
+    if (state.sectionIndex >= sections.length - 1) return;
+
+    const targetIndex = state.sectionIndex + 1;
+    setNavLoading(true, "Saving…");
+    const progressOk = await saveProgressToServer(key, { sectionIndex: targetIndex });
+    if (!progressOk) return;
+
+    state.sectionIndex = targetIndex;
+    saveSession();
+    renderSection(true);
   } finally {
     if (_navBusy) setNavLoading(false);
   }
@@ -1362,19 +1497,50 @@ async function nextSection() {
     if (!(await validateCurrentSection())) return;
     const sections = getSectionOrder();
     const currentKey = sections[state.sectionIndex];
+    const needGuidelines = currentKey === "guidelinesMcq" && !state.guidelinesSubmitted;
+    const canAdvance = state.sectionIndex < sections.length - 1;
+    if (!needGuidelines && !canAdvance) return;
 
-    if (currentKey === "guidelinesMcq" && !state.guidelinesSubmitted) {
-      setNavLoading(true, "Saving…");
-      const saved = await submitGuidelinesMcq();
-      if (!saved) return;
+    const targetIndex = canAdvance ? state.sectionIndex + 1 : state.sectionIndex;
+    setNavLoading(true, "Saving…");
+
+    if (needGuidelines && canAdvance) {
+      const [guideOk, progressOk] = await Promise.all([
+        submitGuidelinesMcq({ quiet: true }),
+        saveProgressToServer(currentKey, {
+          sectionIndex: targetIndex,
+          guidelinesSubmitted: true
+        })
+      ]);
+      if (!guideOk) {
+        showToast("Could not save guidelines. Please try again.", "error");
+        return;
+      }
+      if (!progressOk) return;
+
+      state.guidelinesSubmitted = true;
+      state.showTypingHints = false;
+      state.sectionIndex = targetIndex;
+      saveSession();
+      showToast("Guidelines answers saved.", "success");
+      renderSection(true);
+      return;
     }
 
-    if (state.sectionIndex < sections.length - 1) {
+    if (needGuidelines) {
+      const guideOk = await submitGuidelinesMcq();
+      if (!guideOk) return;
+    }
+
+    if (canAdvance) {
+      const progressOk = await saveProgressToServer(currentKey, {
+        sectionIndex: targetIndex
+      });
+      if (!progressOk) return;
+
       state.showTypingHints = false;
-      state.sectionIndex++;
+      state.sectionIndex = targetIndex;
       saveSession();
-      setNavLoading(true, "Saving…");
-      await saveProgressToServer(currentKey);
       renderSection(true);
     }
   } finally {
@@ -1382,31 +1548,32 @@ async function nextSection() {
   }
 }
 
-async function submitGuidelinesMcq() {
+async function submitGuidelinesMcq(opts) {
+  const quiet = !!(opts && opts.quiet);
+  const payload = {
+    action: "score_guidelines_submit",
+    name: state.name,
+    email: state.email,
+    answers: { guidelinesMcq: {} },
+    answerTexts: { guidelinesMcq: {} },
+    submittedAt: new Date().toISOString(),
+    sessionStartedAt: state.startedAt || ""
+  };
+  getOrderedQuestions("guidelinesMcq").forEach((q) => {
+    const selected = state.answers.guidelinesMcq[q.id] || "";
+    payload.answers.guidelinesMcq[q.id] = selected;
+    payload.answerTexts.guidelinesMcq[q.id] = (q.options && q.options[selected]) || "";
+  });
+
   try {
-    const answers = {};
-    const answerTexts = {};
-    getOrderedQuestions("guidelinesMcq").forEach((q) => {
-      const selected = state.answers.guidelinesMcq[q.id] || "";
-      answers[q.id] = selected;
-      answerTexts[q.id] = (q.options && q.options[selected]) || "";
-    });
-    await apiPostJson({
-      action: "score_guidelines_submit",
-      name: state.name,
-      email: state.email,
-      answers: { guidelinesMcq: answers },
-      answerTexts: { guidelinesMcq: answerTexts },
-      submittedAt: new Date().toISOString(),
-      sessionStartedAt: state.startedAt || ""
-    });
+    await apiPostJson(payload);
     state.guidelinesSubmitted = true;
     saveSession();
-    showToast("Guidelines answers saved.", "success");
+    if (!quiet) showToast("Guidelines answers saved.", "success");
     return true;
   } catch (err) {
     console.error(err);
-    showToast("Could not save guidelines. Please try again.", "error");
+    if (!quiet) showToast("Could not save guidelines. Please try again.", "error");
     return false;
   }
 }
@@ -1717,18 +1884,23 @@ async function startSession() {
       showToast(getLastAuthMessage(), "error");
       return;
     }
+
+    setLoginLoading(btn, true, "Loading progress...");
+    let resolved;
     try {
-      loadData();
+      const pair = await Promise.all([
+        Promise.resolve().then(() => { loadData(); return true; }),
+        resolveProgressForEmail(user.email, readLocalSessionRaw())
+      ]);
+      resolved = pair[1];
     } catch (err) {
       console.error(err);
       showToast("Could not load assessment data.", "error");
       return;
     }
 
-    setLoginLoading(btn, true, "Loading progress...");
-    const serverProgress = await fetchAssessmentProgress(user.email);
-    if (serverProgress) {
-      await resumeSession(serverProgress);
+    if (resolved.session) {
+      await resumeSession(resolved.session);
       return;
     }
 
@@ -1786,7 +1958,9 @@ async function resumeSession(session) {
   }
   const user = await lookupAllowedUser(session.email);
   if (!user) {
-    clearSession();
+    if (typeof wasAuthDenied === "function" && wasAuthDenied()) {
+      clearSession();
+    }
     showToast(getLastAuthMessage(), "error");
     document.getElementById("loginScreen").classList.remove("hidden");
     document.getElementById("mainApp").classList.add("hidden");
@@ -1795,10 +1969,11 @@ async function resumeSession(session) {
   const answers = session.answers && typeof session.answers === "object"
     ? session.answers
     : {};
+  const restoredIndex = Number(session.sectionIndex);
   state = {
     name: user.name,
     email: user.email,
-    sectionIndex: session.sectionIndex || 0,
+    sectionIndex: Number.isFinite(restoredIndex) ? restoredIndex : 0,
     sectionOrder: session.sectionOrder || null,
     itemOrders: session.itemOrders || null,
     optionOrders: session.optionOrders || null,
@@ -1816,8 +1991,9 @@ async function resumeSession(session) {
     guidelinesSubmitted: !!session.guidelinesSubmitted
   };
   ensureShuffleOrders();
+  const clamped = Number(state.sectionIndex);
   state.sectionIndex = Math.min(
-    Math.max(0, state.sectionIndex || 0),
+    Math.max(0, Number.isFinite(clamped) ? clamped : 0),
     getSectionOrder().length - 1
   );
   saveSession();
@@ -1830,9 +2006,20 @@ async function resumeSession(session) {
 }
 
 function endSession(skipConfirm) {
-  if (!skipConfirm && !confirm("End this assessment? Progress will be cleared.")) return;
+  if (
+    !skipConfirm &&
+    !confirm(
+      "End this assessment and return to login? Saved progress (local and server) will be cleared."
+    )
+  ) {
+    return;
+  }
+  const emailToClear = state.email;
   stopAudio();
   clearSession();
+  if (emailToClear) {
+    clearProgressOnServer(emailToClear);
+  }
   state = {
     name: "", email: "", sectionIndex: 0,
     sectionOrder: SECTIONS_DEFAULT.slice(),
@@ -1855,13 +2042,50 @@ function endSession(skipConfirm) {
 }
 
 (async function init() {
-  const localSession = await loadSession();
-  if (localSession && localSession.email) {
-    const serverProgress = await fetchAssessmentProgress(localSession.email);
-    await resumeSession(serverProgress || localSession);
+  const loginBtn = document.getElementById("loginBtn");
+  const rawLocal = readLocalSessionRaw();
+  if (!rawLocal || !rawLocal.email) {
+    document.getElementById("emailInput").focus();
     return;
   }
-  document.getElementById("emailInput").focus();
+
+  setLoginLoading(loginBtn, true, "Loading progress...");
+  try {
+    const user = await lookupAllowedUser(rawLocal.email);
+    if (!user) {
+      if (typeof wasAuthDenied === "function" && wasAuthDenied()) {
+        clearSession();
+      }
+      showToast(getLastAuthMessage(), "error");
+      document.getElementById("emailInput").value = rawLocal.email;
+      document.getElementById("emailInput").focus();
+      return;
+    }
+
+    let resolved;
+    try {
+      const pair = await Promise.all([
+        Promise.resolve().then(() => { loadData(); return true; }),
+        resolveProgressForEmail(user.email, rawLocal)
+      ]);
+      resolved = pair[1];
+    } catch (err) {
+      console.error(err);
+      showToast("Could not load assessment data.", "error");
+      document.getElementById("emailInput").focus();
+      return;
+    }
+
+    if (resolved.session) {
+      await resumeSession(resolved.session);
+      return;
+    }
+
+    document.getElementById("emailInput").value = user.email;
+    document.getElementById("emailInput").focus();
+  } finally {
+    setLoginLoading(loginBtn, false);
+  }
 })();
 
 document.getElementById("emailInput").addEventListener("keydown", (e) => {
