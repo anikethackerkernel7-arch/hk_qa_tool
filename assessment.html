@@ -1033,11 +1033,17 @@ async function fetchTypingSectionScore(key) {
     canForceContinue: !!data.canForceContinue,
     threshold: data.threshold != null ? data.threshold : (FORCE_CONTINUE_THRESHOLDS[key] ?? 100)
   };
+  if (!state.lastTypingEval || typeof state.lastTypingEval !== "object") {
+    state.lastTypingEval = { mcqB: null, transcribe: null };
+  }
   state.lastTypingEval[key] = evalResult;
   return evalResult;
 }
 
 function getTypingEval(key) {
+  if (!state.lastTypingEval || typeof state.lastTypingEval !== "object") {
+    state.lastTypingEval = { mcqB: null, transcribe: null };
+  }
   return state.lastTypingEval[key] || {
     allCorrect: false,
     items: [],
@@ -1677,6 +1683,7 @@ async function resumeSession(session) {
     sessionStartTime: session.sessionStartTime || Date.now(),
     showTypingHints: false,
     forceContinuedSections: session.forceContinuedSections || { mcqB: false, transcribe: false },
+    lastTypingEval: { mcqB: null, transcribe: null },
     guidelinesSubmitted: !!session.guidelinesSubmitted
   };
   ensureShuffleOrders();
