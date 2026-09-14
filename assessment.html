@@ -340,6 +340,8 @@
 const SHEETS_ENDPOINT = "https://script.google.com/macros/s/AKfycbyhTGSGtU52syftzSIkPvsKvOTiYO9VeUNSUg7LLDNOH6_4Le8T5X419Ayb8oSiLDli/exec";
 window.SHEETS_ENDPOINT = SHEETS_ENDPOINT;
 const SESSION_KEY = "argos_assessment_session";
+const SESSION_VERSION = 1;
+let _navBusy = false;
 
 async function apiPostJson(payload) {
   if (!SHEETS_ENDPOINT || SHEETS_ENDPOINT.includes("PASTE_YOUR")) {
@@ -356,6 +358,99 @@ async function apiPostJson(payload) {
     throw new Error((data && data.message) || "Request failed.");
   }
   return data;
+}
+
+async function apiGetJson(params) {
+  if (!SHEETS_ENDPOINT || SHEETS_ENDPOINT.includes("PASTE_YOUR")) {
+    throw new Error("Sheets endpoint is not configured.");
+  }
+  const qs = new URLSearchParams(params || {}).toString();
+  const res = await fetch(SHEETS_ENDPOINT + "?" + qs, { method: "GET" });
+  if (!res.ok) throw new Error("Request failed.");
+  const data = await res.json();
+  if (!data || data.ok !== true) {
+    throw new Error((data && data.message) || "Request failed.");
+  }
+  return data;
+}
+
+function buildProgressPayload() {
+  return {
+    sessionVersion: SESSION_VERSION,
+    sectionIndex: state.sectionIndex,
+    sectionOrder: state.sectionOrder,
+    itemOrders: state.itemOrders,
+    optionOrders: state.optionOrders,
+    answers: state.answers,
+    startedAt: state.startedAt,
+    sessionStartTime: state.sessionStartTime,
+    forceContinuedSections: state.forceContinuedSections,
+    guidelinesSubmitted: state.guidelinesSubmitted
+  };
+}
+
+async function saveProgressToServer(sectionKey) {
+  if (!state.email) return;
+  try {
+    await apiPostJson({
+      action: "save_assessment_progress",
+      email: state.email,
+      name: state.name,
+      section: sectionKey || "",
+      progress: buildProgressPayload()
+    });
+  } catch (err) {
+    console.error(err);
+    showToast("Progress saved locally; server sync failed.", "error");
+  }
+}
+
+async function fetchAssessmentProgress(email) {
+  const key = String(email || "").trim().toLowerCase();
+  if (!key) return null;
+  try {
+    const data = await apiGetJson({
+      action: "get_assessment_progress",
+      email: key
+    });
+    if (!data.found || !data.progress || typeof data.progress !== "object") {
+      return null;
+    }
+    return {
+      name: data.name || "",
+      email: data.email || key,
+      ...data.progress
+    };
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+}
+
+function setNavLoading(loading, loadingLabel) {
+  const card = document.getElementById("sectionCard");
+  if (!card) {
+    _navBusy = !!loading;
+    return;
+  }
+  const buttons = card.querySelectorAll(".btn-primary, .btn-force");
+  buttons.forEach((btn) => {
+    if (!btn.dataset.defaultLabel) {
+      btn.dataset.defaultLabel = btn.textContent;
+    }
+    if (loading) {
+      btn.disabled = true;
+      if (btn.classList.contains("btn-primary")) {
+        btn.textContent = loadingLabel || "Please wait…";
+      }
+    } else {
+      btn.disabled = false;
+      if (btn.dataset.defaultLabel) {
+        btn.textContent = btn.dataset.defaultLabel;
+      }
+    }
+  });
+  _navBusy = !!loading;
 }
 
 const SECTIONS_DEFAULT = ["briefing", "structure", "guidelinesMcq", "learn", "mcqA", "mcqB", "transcribe"];
@@ -572,6 +667,7 @@ function showToast(msg, type) {
 
 function saveSession() {
   localStorage.setItem(SESSION_KEY, JSON.stringify({
+    sessionVersion: SESSION_VERSION,
     name: state.name,
     email: state.email,
     sectionIndex: state.sectionIndex,
@@ -1113,34 +1209,43 @@ function forceContinueButtonHtml(key) {
 }
 
 async function forceContinueSection(key) {
+  if (_navBusy) return;
   if (key !== "mcqB" && key !== "transcribe") return;
-  let evalResult = getTypingEval(key);
-  if (!evalResult.items.length) {
-    try {
-      evalResult = await fetchTypingSectionScore(key);
-    } catch (err) {
-      console.error(err);
-      showToast(err.message || "Could not verify section score.", "error");
+  setNavLoading(true, "Checking…");
+  try {
+    let evalResult = getTypingEval(key);
+    if (!evalResult.items.length) {
+      try {
+        evalResult = await fetchTypingSectionScore(key);
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || "Could not verify section score.", "error");
+        return;
+      }
+    }
+    if (!evalResult.canForceContinue) {
+      showToast("Section accuracy is not high enough to continue anyway.", "error");
       return;
     }
-  }
-  if (!evalResult.canForceContinue) {
-    showToast("Section accuracy is not high enough to continue anyway.", "error");
-    return;
-  }
-  state.forceContinuedSections[key] = true;
-  state.showTypingHints = false;
-  hideTypingHints();
-  saveSession();
-  if (isLastSection()) {
-    await submitAssessment();
-    return;
-  }
-  const sections = getSectionOrder();
-  if (state.sectionIndex < sections.length - 1) {
-    state.sectionIndex++;
+    state.forceContinuedSections[key] = true;
+    state.showTypingHints = false;
+    hideTypingHints();
     saveSession();
-    renderSection(true);
+    if (isLastSection()) {
+      setNavLoading(false);
+      await submitAssessment();
+      return;
+    }
+    const sections = getSectionOrder();
+    if (state.sectionIndex < sections.length - 1) {
+      state.sectionIndex++;
+      saveSession();
+      setNavLoading(true, "Saving…");
+      await saveProgressToServer(key);
+      renderSection(true);
+    }
+  } finally {
+    if (_navBusy) setNavLoading(false);
   }
 }
 
@@ -1251,29 +1356,29 @@ function nextOrSubmitButton() {
 }
 
 async function nextSection() {
-  if (!(await validateCurrentSection())) return;
-  const sections = getSectionOrder();
-  const currentKey = sections[state.sectionIndex];
+  if (_navBusy) return;
+  setNavLoading(true, "Checking…");
+  try {
+    if (!(await validateCurrentSection())) return;
+    const sections = getSectionOrder();
+    const currentKey = sections[state.sectionIndex];
 
-  if (currentKey === "guidelinesMcq" && !state.guidelinesSubmitted) {
-    const guidelinesBtn = document.getElementById("guidelinesNextBtn");
-    if (guidelinesBtn) {
-      guidelinesBtn.disabled = true;
-      guidelinesBtn.textContent = "Saving…";
+    if (currentKey === "guidelinesMcq" && !state.guidelinesSubmitted) {
+      setNavLoading(true, "Saving…");
+      const saved = await submitGuidelinesMcq();
+      if (!saved) return;
     }
-    const saved = await submitGuidelinesMcq();
-    if (guidelinesBtn) {
-      guidelinesBtn.disabled = false;
-      guidelinesBtn.textContent = "Next →";
-    }
-    if (!saved) return;
-  }
 
-  if (state.sectionIndex < sections.length - 1) {
-    state.showTypingHints = false;
-    state.sectionIndex++;
-    saveSession();
-    renderSection(true);
+    if (state.sectionIndex < sections.length - 1) {
+      state.showTypingHints = false;
+      state.sectionIndex++;
+      saveSession();
+      setNavLoading(true, "Saving…");
+      await saveProgressToServer(currentKey);
+      renderSection(true);
+    }
+  } finally {
+    if (_navBusy) setNavLoading(false);
   }
 }
 
@@ -1551,9 +1656,11 @@ function renderFeedback(scores) {
 }
 
 async function submitAssessment() {
+  if (_navBusy) return;
   if (!(await validateAllSections())) return;
   const btn = document.getElementById("submitAssessmentBtn");
   if (btn) { btn.disabled = true; btn.textContent = "Scoring…"; }
+  _navBusy = true;
 
   const submittedAt = new Date().toISOString();
   const built = buildAnswersPayload();
@@ -1578,6 +1685,8 @@ async function submitAssessment() {
     console.error(err);
     showToast(err.message || "Could not submit assessment. Please try again.", "error");
     if (btn) { btn.disabled = false; btn.textContent = "Submit assessment"; }
+  } finally {
+    _navBusy = false;
   }
 }
 
@@ -1615,6 +1724,14 @@ async function startSession() {
       showToast("Could not load assessment data.", "error");
       return;
     }
+
+    setLoginLoading(btn, true, "Loading progress...");
+    const serverProgress = await fetchAssessmentProgress(user.email);
+    if (serverProgress) {
+      await resumeSession(serverProgress);
+      return;
+    }
+
     state = {
       name: user.name,
       email: user.email,
@@ -1663,6 +1780,10 @@ async function resumeSession(session) {
     showToast("Could not load assessment data.", "error");
     return;
   }
+  if (!session || !session.email) {
+    showToast("Could not restore assessment progress.", "error");
+    return;
+  }
   const user = await lookupAllowedUser(session.email);
   if (!user) {
     clearSession();
@@ -1671,6 +1792,9 @@ async function resumeSession(session) {
     document.getElementById("mainApp").classList.add("hidden");
     return;
   }
+  const answers = session.answers && typeof session.answers === "object"
+    ? session.answers
+    : {};
   state = {
     name: user.name,
     email: user.email,
@@ -1678,7 +1802,12 @@ async function resumeSession(session) {
     sectionOrder: session.sectionOrder || null,
     itemOrders: session.itemOrders || null,
     optionOrders: session.optionOrders || null,
-    answers: session.answers || { guidelinesMcq: {}, mcqA: {}, mcqB: {}, transcribe: {} },
+    answers: {
+      guidelinesMcq: answers.guidelinesMcq || {},
+      mcqA: answers.mcqA || {},
+      mcqB: answers.mcqB || {},
+      transcribe: answers.transcribe || {}
+    },
     startedAt: session.startedAt || new Date().toISOString(),
     sessionStartTime: session.sessionStartTime || Date.now(),
     showTypingHints: false,
@@ -1726,9 +1855,10 @@ function endSession(skipConfirm) {
 }
 
 (async function init() {
-  const session = await loadSession();
-  if (session) {
-    await resumeSession(session);
+  const localSession = await loadSession();
+  if (localSession && localSession.email) {
+    const serverProgress = await fetchAssessmentProgress(localSession.email);
+    await resumeSession(serverProgress || localSession);
     return;
   }
   document.getElementById("emailInput").focus();

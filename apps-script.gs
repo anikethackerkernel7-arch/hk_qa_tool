@@ -1,12 +1,14 @@
 /**
- * Argos Training — Google Sheets receiver (v22)
+ * Argos Training — Google Sheets receiver (v24)
  *
  * POST routes (data.type / data.action):
  *  - Practice clips (default) — per-user sheet + summary totals; server scores vs ANSWER_KEY
  *  - training3 — shared Training3 sheet; server scores vs ANSWER_KEY
  *  - assessment — full assessment row; server scores vs ANSWER_KEY
  *  - assessment_guidelines — GuidelinesMcq sheet; server scores vs ANSWER_KEY
- *  - action: score_assessment_section / score_assessment_submit / admin_* / training3_* / batch_*
+ *  - action: score_assessment_section / score_assessment_submit /
+ *            save_assessment_progress / get_assessment_progress / clear_assessment_progress /
+ *            admin_* / training3_* / batch_*
  *
  * Requires companion file answer-key.gs defining global ANSWER_KEY (never ship to HTML).
  */
@@ -133,6 +135,10 @@ function doGet(e) {
 
     if (action === "get_training3_assignment") {
       return jsonResponse(handleGetTraining3Assignment(params.email));
+    }
+
+    if (action === "get_assessment_progress") {
+      return jsonResponse(handleGetAssessmentProgress(params.email));
     }
 
     if (action === "admin_batches") {
@@ -956,6 +962,15 @@ function handleUserAdminPost(data) {
   }
   if (action === "score_guidelines_submit") {
     return jsonResponse(handleScoreGuidelinesSubmit(data));
+  }
+  if (action === "save_assessment_progress") {
+    return jsonResponse(handleSaveAssessmentProgress(data));
+  }
+  if (action === "get_assessment_progress") {
+    return jsonResponse(handleGetAssessmentProgress(data.email));
+  }
+  if (action === "clear_assessment_progress") {
+    return jsonResponse(handleClearAssessmentProgress(data));
   }
 
   return jsonResponse({ ok: false, message: "Unknown action." });
@@ -2102,9 +2117,190 @@ function handleScoreAssessmentSubmit(data) {
       sheet.appendRow(buildAssessmentRow(rowData));
     }
 
+    try {
+      clearAssessmentProgressForEmail_(normalizeEmail(data.email));
+    } catch (clearErr) {
+      Logger.log("clearAssessmentProgress after submit failed: " + clearErr);
+    }
+
     return { ok: true, scores: scores };
   } catch (err) {
     Logger.log("handleScoreAssessmentSubmit failed: " + err);
     return { ok: false, message: "Unable to submit assessment." };
+  }
+}
+
+/* =========================================================
+   Assessment progress (mid-session resume) — one row per email
+   ========================================================= */
+
+const ASSESSMENT_PROGRESS_SHEET_NAME = "AssessmentProgress";
+const ASSESSMENT_PROGRESS_HEADERS = ["Email", "Name", "ProgressJson", "UpdatedAt"];
+
+function getOrCreateAssessmentProgressSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(ASSESSMENT_PROGRESS_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(ASSESSMENT_PROGRESS_SHEET_NAME);
+  }
+  ensureAssessmentProgressHeaders_(sheet);
+  return sheet;
+}
+
+function ensureAssessmentProgressHeaders_(sheet) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(ASSESSMENT_PROGRESS_HEADERS);
+    sheet.getRange(1, 1, 1, ASSESSMENT_PROGRESS_HEADERS.length).setFontWeight("bold");
+    sheet.setFrozenRows(1);
+    return;
+  }
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const existing = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  ASSESSMENT_PROGRESS_HEADERS.forEach((header, i) => {
+    if (existing[i] !== header) {
+      sheet.getRange(1, i + 1).setValue(header).setFontWeight("bold");
+    }
+  });
+  sheet.setFrozenRows(1);
+}
+
+function findAssessmentProgressRow_(sheet, email) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return -1;
+  const values = sheet.getRange(2, 1, lastRow, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (normalizeEmail(values[i][0]) === email) return i + 2;
+  }
+  return -1;
+}
+
+function requireAllowedAssessmentUser_(email) {
+  const key = normalizeEmail(email);
+  if (!key || !isValidEmail(key)) {
+    return { ok: false, message: "Please enter a valid email address." };
+  }
+  const users = readAllUsers();
+  const user = users.find((u) => u.email === key);
+  if (!user) {
+    return { ok: false, message: "This email is not registered for training." };
+  }
+  if (!user.enabled) {
+    return { ok: false, message: "Your login access is currently disabled." };
+  }
+  return { ok: true, email: key, name: user.name };
+}
+
+function mergeAssessmentProgress_(existingProgress, incomingProgress, sectionKey) {
+  const base = (existingProgress && typeof existingProgress === "object")
+    ? existingProgress
+    : {};
+  const incoming = (incomingProgress && typeof incomingProgress === "object")
+    ? incomingProgress
+    : {};
+  const merged = Object.assign({}, base, incoming);
+
+  const baseAnswers = (base.answers && typeof base.answers === "object") ? base.answers : {};
+  const incomingAnswers = (incoming.answers && typeof incoming.answers === "object")
+    ? incoming.answers
+    : {};
+  merged.answers = Object.assign({}, baseAnswers, incomingAnswers);
+
+  if (sectionKey && incomingAnswers[sectionKey] && typeof incomingAnswers[sectionKey] === "object") {
+    merged.answers[sectionKey] = Object.assign(
+      {},
+      (baseAnswers[sectionKey] && typeof baseAnswers[sectionKey] === "object")
+        ? baseAnswers[sectionKey]
+        : {},
+      incomingAnswers[sectionKey]
+    );
+  }
+
+  return merged;
+}
+
+function clearAssessmentProgressForEmail_(email) {
+  const key = normalizeEmail(email);
+  if (!key) return false;
+  const sheet = getOrCreateAssessmentProgressSheet();
+  const row = findAssessmentProgressRow_(sheet, key);
+  if (row === -1) return false;
+  sheet.deleteRow(row);
+  return true;
+}
+
+function handleSaveAssessmentProgress(data) {
+  try {
+    const gate = requireAllowedAssessmentUser_(data.email);
+    if (!gate.ok) return gate;
+
+    const sectionKey = String(data.section || "").trim();
+    const incoming = (data.progress && typeof data.progress === "object")
+      ? data.progress
+      : {};
+
+    const sheet = getOrCreateAssessmentProgressSheet();
+    const row = findAssessmentProgressRow_(sheet, gate.email);
+    let existing = {};
+    if (row !== -1) {
+      existing = safeJsonParse_(sheet.getRange(row, 3).getValue(), {});
+    }
+
+    const merged = mergeAssessmentProgress_(existing, incoming, sectionKey);
+    const name = String(data.name || gate.name || "").trim();
+    const updatedAt = new Date().toISOString();
+    const json = JSON.stringify(merged);
+
+    if (row === -1) {
+      sheet.appendRow([gate.email, name, json, updatedAt]);
+    } else {
+      sheet.getRange(row, 1, row, 4).setValues([[gate.email, name, json, updatedAt]]);
+    }
+
+    return { ok: true, updatedAt: updatedAt };
+  } catch (err) {
+    Logger.log("handleSaveAssessmentProgress failed: " + err);
+    return { ok: false, message: "Unable to save assessment progress." };
+  }
+}
+
+function handleGetAssessmentProgress(email) {
+  try {
+    const gate = requireAllowedAssessmentUser_(email);
+    if (!gate.ok) return gate;
+
+    const sheet = getOrCreateAssessmentProgressSheet();
+    const row = findAssessmentProgressRow_(sheet, gate.email);
+    if (row === -1) {
+      return { ok: true, found: false };
+    }
+
+    const progress = safeJsonParse_(sheet.getRange(row, 3).getValue(), null);
+    if (!progress || typeof progress !== "object") {
+      return { ok: true, found: false };
+    }
+
+    return {
+      ok: true,
+      found: true,
+      name: String(sheet.getRange(row, 2).getValue() || gate.name || ""),
+      email: gate.email,
+      progress: progress,
+      updatedAt: String(sheet.getRange(row, 4).getValue() || "")
+    };
+  } catch (err) {
+    Logger.log("handleGetAssessmentProgress failed: " + err);
+    return { ok: false, message: "Unable to load assessment progress." };
+  }
+}
+
+function handleClearAssessmentProgress(data) {
+  try {
+    const gate = requireAllowedAssessmentUser_(data.email);
+    if (!gate.ok) return gate;
+    clearAssessmentProgressForEmail_(gate.email);
+    return { ok: true };
+  } catch (err) {
+    Logger.log("handleClearAssessmentProgress failed: " + err);
+    return { ok: false, message: "Unable to clear assessment progress." };
   }
 }
