@@ -524,20 +524,28 @@
   .login-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
   .login-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 24px; }
 
-  /* ---------- Completion screen ---------- */
+  /* ---------- Completion / Report screen ---------- */
   .complete-screen {
     min-height: 100vh;
     display: grid;
-    place-items: center;
-    padding: 20px;
+    place-items: start center;
+    padding: 32px 20px;
     background: linear-gradient(135deg, #f0fdfa 0%, #f8fafc 100%);
+    overflow-y: auto;
   }
-  .complete-card {
+  .complete-wrapper {
+    width: 100%;
+    max-width: 680px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  /* Top header area */
+  .report-header-card {
     background: white;
     border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 40px;
-    max-width: 480px;
+    padding: 32px 40px 28px;
     text-align: center;
     box-shadow: 0 20px 60px rgba(15,23,42,0.08);
   }
@@ -550,6 +558,184 @@
     place-items: center;
     font-size: 34px;
     margin: 0 auto 20px;
+  }
+  .complete-icon.warning {
+    background: #fef3c7;
+    color: #d97706;
+  }
+  .report-summary {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+  .report-summary strong { color: var(--text); }
+
+  /* Section cards */
+  .report-section-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(15,23,42,0.06);
+  }
+  .report-section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.2px;
+  }
+  .report-section-header.green {
+    background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+    color: #15803d;
+    border-bottom: 1px solid #bbf7d0;
+  }
+  .report-section-header.red {
+    background: linear-gradient(135deg, #fff1f2, #fee2e2);
+    color: #b91c1c;
+    border-bottom: 1px solid #fecaca;
+  }
+  .report-section-header .section-icon {
+    font-size: 16px;
+  }
+  .report-section-header .section-count {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(0,0,0,0.08);
+    padding: 2px 9px;
+    border-radius: 20px;
+  }
+
+  /* Clip rows */
+  .report-list { text-align: left; }
+  .report-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 20px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    transition: background 0.15s;
+  }
+  .report-row:last-child { border-bottom: none; }
+  .report-row.perfect-row { background: #fff; }
+  .report-row.perfect-row:hover { background: #f0fdf4; }
+  .report-row.needs-fix {
+    background: #fff;
+    cursor: pointer;
+  }
+  .report-row.needs-fix:hover { background: #fff7f7; }
+  .report-clip-num {
+    font-weight: 600;
+    min-width: 58px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .report-clip-id {
+    flex: 1;
+    color: var(--text);
+    font-weight: 500;
+  }
+  .report-score {
+    font-weight: 700;
+    font-size: 13px;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+  .report-score.perfect {
+    background: #dcfce7;
+    color: #16a34a;
+  }
+  .report-score.imperfect {
+    background: #fee2e2;
+    color: #dc2626;
+  }
+  .report-retry-footer {
+    padding: 16px 20px;
+    text-align: center;
+    background: #fff;
+    border-top: 1px solid var(--border);
+  }
+  .btn-attempt-all {
+    width: 100%;
+    padding: 12px 24px;
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    color: white;
+    font-weight: 700;
+    font-size: 14px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .btn-attempt-all:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(220, 38, 38, 0.35);
+    background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);
+  }
+  .report-empty {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  /* Achievement popup overlay */
+  .achievement-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.85);
+    background: white;
+    border-radius: 20px;
+    padding: 36px 48px;
+    text-align: center;
+    box-shadow: 0 24px 80px rgba(15,23,42,0.22);
+    z-index: 1000;
+    opacity: 0;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    pointer-events: none;
+  }
+  .achievement-popup.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+    pointer-events: auto;
+  }
+  .achievement-popup .ach-icon {
+    font-size: 52px;
+    margin-bottom: 14px;
+  }
+  .achievement-popup .ach-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #15803d;
+    margin-bottom: 6px;
+  }
+  .achievement-popup .ach-sub {
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  .achievement-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,0.45);
+    z-index: 999;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+  .achievement-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   /* ---------- Toast ---------- */
@@ -771,16 +957,52 @@
   </div>
 </div>
 
-<!-- ============ COMPLETION SCREEN ============ -->
+<!-- ============ REPORT / COMPLETION SCREEN ============ -->
 <div id="completeScreen" class="complete-screen" style="display:none;">
-  <div class="complete-card">
-    <div class="complete-icon">✓</div>
-    <h2 style="margin-bottom:8px;">Session complete</h2>
-    <p style="color:var(--text-muted); margin-bottom:24px;">
-      You've submitted all <span id="totalSubmitted">0</span> Training 3 clips. Your responses have been saved for trainer review.
-    </p>
-    <button class="btn btn-primary" onclick="resetSession()">Start new session</button>
+  <div class="complete-wrapper">
+
+    <!-- Header card -->
+    <div class="report-header-card">
+      <div class="complete-icon" id="reportIcon">✓</div>
+      <h2 style="margin-bottom:4px;" id="reportTitle">Overall Review</h2>
+      <p class="report-summary" id="reportSummary"></p>
+      <div id="reportActions"></div>
+    </div>
+
+    <!-- 100% Completed Clips card -->
+    <div class="report-section-card" id="perfectSection">
+      <div class="report-section-header green">
+        <span class="section-icon">✅</span>
+        <span>100% Completed Clips</span>
+        <span class="section-count" id="perfectCount">0</span>
+      </div>
+      <div class="report-list" id="perfectList"></div>
+    </div>
+
+    <!-- Clips Needing Another Attempt card -->
+    <div class="report-section-card" id="retrySection" style="display:none;">
+      <div class="report-section-header red">
+        <span class="section-icon">🔁</span>
+        <span>Attempt These Clips Again to Achieve 100%</span>
+        <span class="section-count" id="retryCount">0</span>
+      </div>
+      <div class="report-list" id="retryList"></div>
+      <div class="report-retry-footer" id="retryFooter">
+        <button class="btn-attempt-all" id="attemptAllBtn" onclick="startRetryQueueFromFirst()">
+          Attempt Remaining Clips →
+        </button>
+      </div>
+    </div>
+
   </div>
+</div>
+
+<!-- Achievement popup -->
+<div class="achievement-overlay" id="achievementOverlay"></div>
+<div class="achievement-popup" id="achievementPopup">
+  <div class="ach-icon">🏆</div>
+  <div class="ach-title" id="achTitle">Clip achieved 100%!</div>
+  <div class="ach-sub" id="achSub">Loading next clip…</div>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -1007,6 +1229,11 @@ let state = {
   briefingCompleted: false,
   sessionId: "",
   assignedClipIds: [],
+  clipScores: {},   // clipId → best similarity score (0-100)
+  clipAnswers: {},  // clipId → last written answer typed by the user
+  retryMode: false, // true when the user came from the report screen to fix a clip
+  retryQueue: [],   // ordered list of clipOrder-indices that still need fixing (used during sequential retry flow)
+  retryQueuePos: 0, // which position in retryQueue we are currently at
 };
 
 const audioEl = document.getElementById("audioEl");
@@ -1026,6 +1253,8 @@ function saveSession() {
     briefingCompleted: !!state.briefingCompleted,
     sessionId: state.sessionId || "",
     assignedClipIds: Array.isArray(state.assignedClipIds) ? state.assignedClipIds : [],
+    clipScores:  state.clipScores  && typeof state.clipScores  === "object" ? state.clipScores  : {},
+    clipAnswers: state.clipAnswers && typeof state.clipAnswers === "object" ? state.clipAnswers : {},
   };
   localStorage.setItem(SESSION_KEY, JSON.stringify(session));
 }
@@ -1158,6 +1387,9 @@ async function resumeSession(session) {
   state.playCount = 0;
   state.startTime = null;
   state.briefingCompleted = !!session.briefingCompleted;
+  state.clipScores  = (session.clipScores  && typeof session.clipScores  === "object") ? session.clipScores  : {};
+  state.clipAnswers = (session.clipAnswers && typeof session.clipAnswers === "object") ? session.clipAnswers : {};
+  state.retryMode   = false;
   updateHeader();
   saveSession();
   document.getElementById("loginScreen").style.display = "none";
@@ -1197,6 +1429,11 @@ function resetSession() {
     startedAt: null,
     clipStartedAt: null,
     briefingCompleted: false,
+    clipScores: {},
+    clipAnswers: {},
+    retryMode: false,
+    retryQueue: [],
+    retryQueuePos: 0,
   };
   document.getElementById("emailInput").value = "";
   document.getElementById("mainApp").style.display = "none";
@@ -1240,7 +1477,9 @@ function loadClip(index) {
   document.getElementById("totalTime").textContent = "0:00";
   const texts = clipTextsFor(clip.id);
   document.getElementById("spokenInput").value = texts.incorrect || "";
-  document.getElementById("writtenInput").value = "";
+  // Pre-fill with the user's last saved answer for this clip (empty string for first time)
+  const savedAnswer = state.clipAnswers && state.clipAnswers[clip.id];
+  document.getElementById("writtenInput").value = savedAnswer || "";
   document.getElementById("speakerCount").value = "1";
 
   updateProgress();
@@ -1557,6 +1796,19 @@ async function submitClip() {
   const timing = buildTimingFields();
   stopClipTimer();
 
+  // ── Save the user's written answer for this clip (so it can be pre-filled on retry) ──
+  const writtenText = document.getElementById("writtenInput").value.trim();
+  state.clipAnswers[clip.id] = writtenText;
+
+  // ── Score this clip against its gold (original) text ──
+  const goldText  = clipTextsFor(clip.id).original || "";
+  const thisScore = similarityPercent(writtenText, goldText);
+  // Keep the BEST score ever seen for this clip
+  const prevBest  = state.clipScores[clip.id] != null ? state.clipScores[clip.id] : -1;
+  if (thisScore > prevBest) {
+    state.clipScores[clip.id] = thisScore;
+  }
+
   const payload = {
     type: "training3",
     timestamp: timing.clipSubmittedAt,
@@ -1567,7 +1819,7 @@ async function submitClip() {
     locale: clip.locale,
     fileName: clip.file.split("/").pop(),
     spoken: document.getElementById("spokenInput").value.trim(),
-    written: document.getElementById("writtenInput").value.trim(),
+    written: writtenText,
     incorrectText: clipTextsFor(clip.id).incorrect || "",
     speakerCount: speakers.length,
     speakers: speakers,
@@ -1577,6 +1829,7 @@ async function submitClip() {
     clipStartedAt: timing.clipStartedAt,
     clipSubmittedAt: timing.clipSubmittedAt,
     skipped: false,
+    similarityPercent: state.clipScores[clip.id],
     sessionId: state.sessionId || "",
   };
 
@@ -1584,19 +1837,67 @@ async function submitClip() {
   btn.disabled = true;
   btn.textContent = "Saving…";
 
+  const wasRetry = !!state.retryMode;
+  const justScoredPerfect = (state.clipScores[clip.id] === 100);
+
   try {
     await sendToSheets(payload);
-    showToast("Saved. Loading next clip…", "success");
-    setTimeout(() => {
+    saveSession();
+    if (wasRetry) {
       btn.disabled = false;
       btn.textContent = "Submit & Next →";
-      loadClip(state.currentIndex + 1);
-    }, 800);
+      state.retryMode = false;
+      document.getElementById("mainApp").style.display = "none";
+
+      if (justScoredPerfect) {
+        // ── Clip just hit 100% ──
+        // Remove this clip from retryQueue
+        state.retryQueue = state.retryQueue.filter((idx) => {
+          const id = state.clipOrder[idx];
+          return (state.clipScores[id] == null || state.clipScores[id] < 100);
+        });
+
+        const clipLabel = clip.id.replace(/^clip_0*/, "Clip ");
+
+        // Find next clip in queue that still needs fixing
+        const nextIdx = state.retryQueue.find((idx) => {
+          const id = state.clipOrder[idx];
+          return (state.clipScores[id] == null || state.clipScores[id] < 100);
+        });
+
+        if (nextIdx !== undefined) {
+          // Show achievement popup, then auto-advance to next clip
+          showAchievementPopup(clipLabel, () => {
+            state.retryMode = true;
+            document.getElementById("mainApp").style.display = "block";
+            loadClip(nextIdx);
+            const submitBtn = document.getElementById("submitBtn");
+            if (submitBtn) submitBtn.textContent = "Save & Continue →";
+          });
+        } else {
+          // All clips in the queue are now 100% — go back to report
+          showAchievementPopup(clipLabel, () => {
+            showReport();
+          }, true);
+        }
+      } else {
+        // Score still not 100% — go back to report so user can see updated score
+        showToast("Saved. Check your score below.", "success");
+        showReport();
+      }
+    } else {
+      showToast("Saved. Loading next clip…", "success");
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = "Submit & Next →";
+        loadClip(state.currentIndex + 1);
+      }, 800);
+    }
   } catch (err) {
     console.error(err);
     showToast("Could not save. Check your Sheets URL in the code.", "error");
     btn.disabled = false;
-    btn.textContent = "Submit & Next →";
+    btn.textContent = wasRetry ? "Save & Continue →" : "Submit & Next →";
     startClipTimer();
   }
 }
@@ -1622,10 +1923,196 @@ async function sendToSheets(payload) {
 
 function showCompletion() {
   stopClipTimer();
-  document.getElementById("totalSubmitted").textContent = getSessionClipCount();
   document.getElementById("mainApp").style.display = "none";
   document.getElementById("briefingScreen").style.display = "none";
+  showReport();
+}
+
+/**
+ * Render the Overall Review screen with two separate section cards:
+ *  1. 100% Completed Clips
+ *  2. Attempt These Clips Again to Achieve 100%
+ */
+function showReport() {
+  // Ensure all submitted clip answers are re-calculated against their gold text
+  // (Fixes any scores previously saved as 0% when gold text was missing)
+  state.clipOrder.forEach((id) => {
+    const savedAnswer = state.clipAnswers && state.clipAnswers[id];
+    const goldText = clipTextsFor(id).original || "";
+    if (savedAnswer && goldText) {
+      const reCalc = similarityPercent(savedAnswer, goldText);
+      const currentBest = state.clipScores[id] != null ? state.clipScores[id] : 0;
+      if (reCalc > currentBest) {
+        state.clipScores[id] = reCalc;
+      }
+    }
+  });
+  saveSession();
+
+  const scores   = state.clipScores || {};
+  const total    = getSessionClipCount();
+  const allPassed = state.clipOrder.every((id) => scores[id] === 100);
+
+  // ── Header ──
+  const iconEl    = document.getElementById("reportIcon");
+  const titleEl   = document.getElementById("reportTitle");
+  const summaryEl = document.getElementById("reportSummary");
+  const actionsEl = document.getElementById("reportActions");
+
+  if (allPassed) {
+    iconEl.textContent = "✓";
+    iconEl.className   = "complete-icon";
+    titleEl.textContent = "All Clips Complete! 🎉";
+    summaryEl.innerHTML = `All <strong>${total}</strong> clips scored 100%. Excellent work!`;
+    actionsEl.innerHTML =
+      `<button class="btn btn-primary" style="margin-top:16px;" onclick="resetSession()">Start New Session</button>`;
+  } else {
+    const needFix = state.clipOrder.filter((id) => (scores[id] == null || scores[id] < 100)).length;
+    const doneCount = total - needFix;
+    iconEl.textContent = "⚠";
+    iconEl.className   = "complete-icon warning";
+    titleEl.textContent = "Overall Review";
+    summaryEl.innerHTML =
+      `<strong>${doneCount}</strong> of <strong>${total}</strong> clips at 100%. ` +
+      `<strong>${needFix}</strong> clip${needFix !== 1 ? "s" : ""} still need${needFix === 1 ? "s" : ""} attention.`;
+    actionsEl.innerHTML = "";
+  }
+
+  // ── Build two lists ──
+  const perfectClips = [];
+  const retryClips   = [];
+  state.clipOrder.forEach((clipId, i) => {
+    const score = scores[clipId] != null ? scores[clipId] : null;
+    if (score === 100) {
+      perfectClips.push({ clipId, i, score });
+    } else {
+      retryClips.push({ clipId, i, score });
+    }
+  });
+
+  // ── Render 100% section ──
+  const perfectListEl = document.getElementById("perfectList");
+  const perfectCountEl = document.getElementById("perfectCount");
+  perfectCountEl.textContent = perfectClips.length;
+  if (perfectClips.length === 0) {
+    perfectListEl.innerHTML = `<div class="report-empty">No clips at 100% yet — keep going!</div>`;
+  } else {
+    perfectListEl.innerHTML = perfectClips.map(({ clipId, i }) => {
+      const clipLabel = clipId.replace(/^clip_0*/, "Clip ");
+      return `
+        <div class="report-row perfect-row">
+          <span class="report-clip-num">#${i + 1}</span>
+          <span class="report-clip-id">${clipLabel}</span>
+          <span class="report-score perfect">100%</span>
+        </div>`;
+    }).join("");
+  }
+
+  // ── Render retry section ──
+  const retrySection  = document.getElementById("retrySection");
+  const retryListEl   = document.getElementById("retryList");
+  const retryCountEl  = document.getElementById("retryCount");
+  const attemptAllBtn = document.getElementById("attemptAllBtn");
+
+  if (retryClips.length === 0) {
+    retrySection.style.display = "none";
+  } else {
+    retrySection.style.display = "block";
+    retryCountEl.textContent = retryClips.length;
+    if (attemptAllBtn) {
+      attemptAllBtn.textContent = `Attempt ${retryClips.length} Remaining Clip${retryClips.length > 1 ? "s" : ""} Again →`;
+    }
+    retryListEl.innerHTML = retryClips.map(({ clipId, i, score }) => {
+      const clipLabel  = clipId.replace(/^clip_0*/, "Clip ");
+      const scoreLabel = score != null ? `${score}%` : "Not submitted";
+      return `
+        <div class="report-row needs-fix" onclick="startRetryQueue(${i})" title="Click to attempt this clip">
+          <span class="report-clip-num">#${i + 1}</span>
+          <span class="report-clip-id">${clipLabel}</span>
+          <span class="report-score imperfect">${scoreLabel}</span>
+        </div>`;
+    }).join("");
+  }
+
   document.getElementById("completeScreen").style.display = "grid";
+}
+
+/**
+ * Called when the user clicks the main 'Attempt Remaining Clips' button below the card.
+ * Starts the retry queue from the very first incomplete clip.
+ */
+function startRetryQueueFromFirst() {
+  const scores = state.clipScores || {};
+  const firstIncompleteIdx = state.clipOrder.findIndex((id) => (scores[id] == null || scores[id] < 100));
+  if (firstIncompleteIdx !== -1) {
+    startRetryQueue(firstIncompleteIdx);
+  }
+}
+
+/**
+ * Called when the user clicks a clip in the "Attempt Again" section.
+ * Builds a retryQueue starting from the clicked clip and going through
+ * all remaining incomplete clips in order.
+ * @param {number} startIndex - index into state.clipOrder of the clicked clip
+ */
+function startRetryQueue(startIndex) {
+  const scores = state.clipScores || {};
+  // Build ordered list of ALL incomplete clip indices, starting from startIndex
+  const incomplete = state.clipOrder
+    .map((id, i) => ({ id, i }))
+    .filter(({ id }) => scores[id] == null || scores[id] < 100);
+
+  // Reorder so startIndex comes first, then the rest in their natural order
+  const before = incomplete.filter(({ i }) => i < startIndex);
+  const fromStart = incomplete.filter(({ i }) => i >= startIndex);
+  state.retryQueue = [...fromStart, ...before].map(({ i }) => i);
+  state.retryQueuePos = 0;
+
+  // Launch the first clip in the queue
+  const firstIdx = state.retryQueue[0];
+  if (firstIdx === undefined) return;
+
+  state.retryMode = true;
+  document.getElementById("completeScreen").style.display = "none";
+  document.getElementById("mainApp").style.display = "block";
+  loadClip(firstIdx);
+
+  const submitBtn = document.getElementById("submitBtn");
+  if (submitBtn) submitBtn.textContent = "Save & Continue →";
+
+  const clipId    = state.clipOrder[firstIdx];
+  const clipLabel = clipId ? clipId.replace(/^clip_0*/, "Clip ") : `Clip ${firstIdx + 1}`;
+  showToast(`${clipLabel} — previous answers pre-filled. Fix and submit.`, "");
+}
+
+/**
+ * Show the achievement popup when a clip reaches 100%, then call onDone().
+ * @param {string} clipLabel  e.g. "Clip 5"
+ * @param {Function} onDone   callback after popup dismisses
+ * @param {boolean} allDone   if true, message says all clips are complete
+ */
+function showAchievementPopup(clipLabel, onDone, allDone = false) {
+  const overlay = document.getElementById("achievementOverlay");
+  const popup   = document.getElementById("achievementPopup");
+  const title   = document.getElementById("achTitle");
+  const sub     = document.getElementById("achSub");
+
+  if (allDone) {
+    title.textContent = "All Clips at 100%! 🎉";
+    sub.textContent   = "Returning to Overall Review…";
+  } else {
+    title.textContent = `${clipLabel} achieved 100%!`;
+    sub.textContent   = "Loading next clip…";
+  }
+
+  overlay.classList.add("show");
+  popup.classList.add("show");
+
+  setTimeout(() => {
+    overlay.classList.remove("show");
+    popup.classList.remove("show");
+    if (onDone) onDone();
+  }, 1800);
 }
 
 /* =========================================================
