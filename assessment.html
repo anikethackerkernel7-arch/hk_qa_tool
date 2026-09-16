@@ -111,9 +111,9 @@
 
   .workspace { max-width: 900px; margin: 0 auto; padding: 24px; }
   .workspace.with-hints {
-    max-width: 1180px;
+    max-width: 1260px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-columns: minmax(0, 1fr) 400px;
     gap: 20px;
     align-items: start;
   }
@@ -263,6 +263,54 @@
   .toast.error { background: var(--danger); }
   .toast.success { background: var(--success); }
   .hidden { display: none !important; }
+
+  /* ---------- Tag toolbar (mcqB sidebar) ---------- */
+  .tag-toolbar-panel {
+    display: none;
+    margin-bottom: 14px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .tag-toolbar-panel.active { display: block; }
+  .tag-toolbar-panel-title {
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 8px;
+  }
+  .tag-clip-select-row {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .tag-clip-select-label {
+    font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap;
+  }
+  .tag-clip-select {
+    flex: 1; font-size: 12px; padding: 4px 6px; border: 1px solid var(--border);
+    border-radius: 5px; background: white; cursor: pointer;
+  }
+  .tag-toolbar {
+    background: #f8fafc; border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 14px;
+  }
+  .tag-row {
+    display: flex; align-items: flex-start; flex-wrap: wrap;
+    gap: 6px; margin-bottom: 10px;
+  }
+  .tag-row:last-child { margin-bottom: 0; }
+  .tag-row-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+    text-transform: uppercase; color: var(--text-muted);
+    min-width: 100%; flex-shrink: 0; margin-bottom: 3px;
+  }
+  .tag-btn {
+    font-family: ui-monospace, monospace; font-size: 11px;
+    padding: 4px 9px; border-radius: 4px; border: 1px solid var(--border);
+    background: white; color: var(--text); cursor: pointer; line-height: 1.5;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .tag-btn:hover { border-color: var(--primary); background: var(--primary-soft); }
+  .tag-btn.tag-insert { background: #fff; }
+  .tag-btn.tag-wrap { background: #f1f5f9; }
+  .tag-btn.tag-alone { border-color: #fecaca; color: #b91c1c; background: #fff; }
+  .tag-btn.tag-bc { background: #e2e8f0; border-radius: 999px; }
 </style>
 </head>
 <body>
@@ -306,6 +354,54 @@
   <div class="workspace" id="workspace">
     <div class="card" id="sectionCard"></div>
     <aside class="hint-sidebar hidden" id="hintSidebar" aria-label="Transcription hints">
+      <!-- ===== Tag toolbar (shown only on mcqB step) ===== -->
+      <div class="tag-toolbar-panel" id="tagToolbarPanel">
+        <div class="tag-toolbar-panel-title">Insert Tag</div>
+        <div class="tag-clip-select-row">
+          <span class="tag-clip-select-label">Clip:</span>
+          <select class="tag-clip-select" id="tagClipSelect" onchange="onTagClipSelectChange()"></select>
+        </div>
+        <div class="tag-toolbar">
+          <div class="tag-row">
+            <span class="tag-row-label">Insert</span>
+            <button type="button" class="tag-btn tag-insert" onclick="insertTagIntoActiveClip('[artifact]')">[artifact]</button>
+            <button type="button" class="tag-btn tag-insert" onclick="insertTagIntoActiveClip('[bg]')">[bg]</button>
+            <button type="button" class="tag-btn tag-insert" onclick="insertTagIntoActiveClip('[fp]')">[fp]</button>
+            <button type="button" class="tag-btn tag-insert" onclick="insertTagIntoActiveClip('[hn]')">[hn]</button>
+            <button type="button" class="tag-btn tag-insert" onclick="insertTagIntoActiveClip('[laughter]')">[laughter]</button>
+            <button type="button" class="tag-btn tag-insert" onclick="insertTagIntoActiveClip('[noise]')">[noise]</button>
+            <button type="button" class="tag-btn tag-insert" onclick="insertTagIntoActiveClip('&lt;s1&gt;')">&lt;s1&gt;</button>
+            <button type="button" class="tag-btn tag-insert" onclick="insertTagIntoActiveClip('&lt;s2&gt;')">&lt;s2&gt;</button>
+          </div>
+          <div class="tag-row">
+            <span class="tag-row-label">Wrap / Span</span>
+            <button type="button" class="tag-btn tag-wrap" onclick="insertTagIntoActiveClip(null,'&lt;ol&gt; ','  &lt;/ol&gt;')">&lt;ol&gt; - &lt;/ol&gt;</button>
+            <button type="button" class="tag-btn tag-wrap" onclick="insertTagIntoActiveClip(null,'(( ',' ))')">(( - ))</button>
+            <button type="button" class="tag-btn tag-wrap" onclick="insertTagIntoActiveClip(null,'{{ ',' }}')">{{ - }}</button>
+          </div>
+          <div class="tag-row">
+            <span class="tag-row-label">Alone</span>
+            <button type="button" class="tag-btn tag-alone" onclick="insertTagIntoActiveClip('&lt;ct&gt;')">&lt;ct&gt;</button>
+            <button type="button" class="tag-btn tag-alone" onclick="insertTagIntoActiveClip('&lt;ga&gt;')">&lt;ga&gt;</button>
+            <button type="button" class="tag-btn tag-alone" onclick="insertTagIntoActiveClip('&lt;na&gt;')">&lt;na&gt;</button>
+            <button type="button" class="tag-btn tag-alone" onclick="insertTagIntoActiveClip('&lt;ns&gt;')">&lt;ns&gt;</button>
+            <button type="button" class="tag-btn tag-alone" onclick="insertTagIntoActiveClip('&lt;nt&gt;')">&lt;nt&gt;</button>
+            <button type="button" class="tag-btn tag-alone" onclick="insertTagIntoActiveClip('&lt;sc&gt;')">&lt;sc&gt;</button>
+          </div>
+          <div class="tag-row">
+            <span class="tag-row-label">Backchannels</span>
+            <button type="button" class="tag-btn tag-bc" onclick="insertTagIntoActiveClip('mm-hm')">mm-hm</button>
+            <button type="button" class="tag-btn tag-bc" onclick="insertTagIntoActiveClip('uh-huh')">uh-huh</button>
+            <button type="button" class="tag-btn tag-bc" onclick="insertTagIntoActiveClip('hmm')">hmm</button>
+            <button type="button" class="tag-btn tag-bc" onclick="insertTagIntoActiveClip('uh')">uh</button>
+            <button type="button" class="tag-btn tag-bc" onclick="insertTagIntoActiveClip('um')">um</button>
+            <button type="button" class="tag-btn tag-bc" onclick="insertTagIntoActiveClip('oh')">oh</button>
+            <button type="button" class="tag-btn tag-bc" onclick="insertTagIntoActiveClip('mm-mm')">mm-mm</button>
+            <button type="button" class="tag-btn tag-bc" onclick="insertTagIntoActiveClip('yeah')">yeah</button>
+          </div>
+        </div>
+      </div>
+      <!-- ===== Hints (existing) ===== -->
       <h3>Hints</h3>
       <div class="hint-sidebar-legend">
         <span class="diff-ok">Green</span> = match ·
@@ -1111,6 +1207,8 @@ function renderMcqB(card) {
   `;
   if (state.showTypingHints) showTypingHints("mcqB");
   else hideTypingHints();
+  // Initialise tag toolbar for this mcqB render
+  initTagToolbar(items, "mcqb_");
 }
 
 function renderTranscribe(card) {
@@ -1141,6 +1239,8 @@ function renderTranscribe(card) {
   `;
   if (state.showTypingHints) showTypingHints("transcribe");
   else hideTypingHints();
+  // Initialise tag toolbar for this transcribe render
+  initTagToolbar(items, "tr_");
 }
 
 function escapeHtml(str) {
@@ -1178,27 +1278,32 @@ function renderSection(scrollToTop) {
   if (key === "briefing") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
+    hideTagToolbar();
     renderBriefing(card);
   } else if (key === "structure") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
+    hideTagToolbar();
     renderStructure(card);
   } else if (key === "learn") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
+    hideTagToolbar();
     renderLearn(card);
   } else if (key === "guidelinesMcq") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
+    hideTagToolbar();
     renderGuidelinesMcq(card);
   } else if (key === "mcqA") {
     setWorkspaceHintsMode(false);
     hideTypingHints();
+    hideTagToolbar();
     renderMcq(card, "mcqA", SECTION_LABELS.mcqA);
   } else if (key === "mcqB") {
-    renderMcqB(card);
+    renderMcqB(card); // initTagToolbar called inside renderMcqB
   } else {
-    renderTranscribe(card);
+    renderTranscribe(card); // initTagToolbar called inside renderTranscribe
   }
   // Only scroll on Next/Back (or explicit true) — never on option re-render
   if (scrollToTop) {
@@ -1214,6 +1319,109 @@ function setWorkspaceHintsMode(enabled) {
   const workspace = document.getElementById("workspace");
   if (!workspace) return;
   workspace.classList.toggle("with-hints", !!enabled);
+}
+
+/* =========================================================
+   TAG TOOLBAR (mcqB + transcribe)
+   ========================================================= */
+
+/** Currently active textarea ID prefix: "mcqb_" or "tr_" */
+let _tagActivePrefix = "mcqb_";
+
+/**
+ * Populate the clip dropdown and show the tag toolbar.
+ * taPrefix: "mcqb_" for the mcqB section, "tr_" for the transcribe section.
+ */
+function initTagToolbar(items, taPrefix) {
+  const panel = document.getElementById("tagToolbarPanel");
+  const select = document.getElementById("tagClipSelect");
+  const sidebar = document.getElementById("hintSidebar");
+  if (!panel || !select) return;
+
+  _tagActivePrefix = taPrefix || "mcqb_";
+
+  // Build dropdown options
+  select.innerHTML = items.map((q, i) =>
+    `<option value="${q.id}">Clip ${i + 1} \u2014 ${q.id}</option>`
+  ).join("");
+
+  // Show the tag panel
+  panel.classList.add("active");
+
+  // Make the sidebar visible immediately
+  if (sidebar) sidebar.classList.remove("hidden");
+
+  // Auto-sync dropdown when user focuses a clip's textarea
+  items.forEach((q) => {
+    const ta = document.getElementById(`${_tagActivePrefix}${q.id}`);
+    if (!ta) return;
+    ta.addEventListener("focus", () => {
+      select.value = q.id;
+    });
+  });
+}
+
+/**
+ * Insert tag text at cursor position in the selected clip's textarea.
+ * For wrap tags, pass wrapOpen/wrapClose instead of text.
+ */
+function insertTagIntoActiveClip(text, wrapOpen, wrapClose) {
+  const select = document.getElementById("tagClipSelect");
+  if (!select || !select.value) return;
+  const clipId = select.value;
+  const ta = document.getElementById(`${_tagActivePrefix}${clipId}`);
+  if (!ta) return;
+
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  const before = ta.value.substring(0, start);
+  const selected = ta.value.substring(start, end);
+  const after = ta.value.substring(end);
+
+  let inserted;
+  let cursorPos;
+
+  if (wrapOpen && wrapClose) {
+    if (selected.length > 0) {
+      inserted = before + wrapOpen + selected + wrapClose + after;
+      cursorPos = (before + wrapOpen + selected + wrapClose).length;
+    } else {
+      inserted = before + wrapOpen + wrapClose + after;
+      cursorPos = (before + wrapOpen).length;
+    }
+  } else {
+    inserted = before + text + after;
+    cursorPos = (before + text).length;
+  }
+
+  ta.value = inserted;
+  ta.focus();
+  ta.setSelectionRange(cursorPos, cursorPos);
+
+  // Persist using the correct save function
+  if (_tagActivePrefix === "tr_") {
+    saveTranscribe(clipId, ta.value);
+  } else {
+    saveMcqB(clipId, ta.value);
+  }
+}
+
+/** Called by onchange on the clip select — focus the corresponding textarea. */
+function onTagClipSelectChange() {
+  const select = document.getElementById("tagClipSelect");
+  if (!select || !select.value) return;
+  const ta = document.getElementById(`${_tagActivePrefix}${select.value}`);
+  if (ta) ta.focus();
+}
+
+/** Hide and reset the tag toolbar. Called when leaving mcqB or transcribe. */
+function hideTagToolbar() {
+  const panel = document.getElementById("tagToolbarPanel");
+  if (panel) panel.classList.remove("active");
+  const select = document.getElementById("tagClipSelect");
+  if (select) select.innerHTML = "";
+  const sidebar = document.getElementById("hintSidebar");
+  if (sidebar) sidebar.classList.add("hidden");
 }
 
 function remainingMissingCount(answer, gold) {
